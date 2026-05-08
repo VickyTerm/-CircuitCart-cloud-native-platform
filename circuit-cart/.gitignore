@@ -1,0 +1,35 @@
+# Node.js
+node_modules/
+dist/
+build/
+npm-debug.log*
+yarn-error.log*
+
+# Docker
+docker-compose.override.yml
+.docker/
+
+# Terraform
+*.tfstate
+*.tfstate.backup
+.terraform/
+.terraform.lock.hcl
+
+# Kubernetes
+*.yaml.tmp
+*.yml.tmp
+
+# OS / Editor
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+
+# Logs
+*.log
+logs/
+
+# Misc
+.env
+.env.local
+.env.*.local
