@@ -1,0 +1,706 @@
+openapi: 3.1.0
+info:
+  title: Circuit Cart - Notification Service
+  description: |
+    Manages transactional and marketing notifications across channels
+    (email, SMS, push, in-app) with template management, preference
+    center, and delivery tracking for Circuit Cart.
+  version: 1.0.0
+  contact:
+    name: Circuit Cart Dev Team
+    email: your.email@example.com
+
+servers:
+  - url: https://api.circuitcart.com/api/v1
+    description: Production
+  - url: http://localhost:3005/api/v1
+    description: Local Notification Service
+
+tags:
+  - name: notifications
+    description: In-app notification inbox
+  - name: preferences
+    description: User notification preferences
+  - name: push
+    description: Push notification device registration
+  - name: templates
+    description: Notification template management (admin)
+  - name: admin
+    description: Admin send & analytics
+
+paths:
+  # ─── IN-APP INBOX ───────────────────────────────────────
+  /notifications:
+    get:
+      tags: [notifications]
+      operationId: listNotifications
+      summary: Get the authenticated user's notification inbox
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: unreadOnly
+          in: query
+          schema:
+            type: boolean
+            default: false
+        - name: type
+          in: query
+          schema:
+            $ref: '#/components/schemas/NotificationType'
+        - name: page
+          in: query
+          schema:
+            type: integer
+            default: 1
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            default: 20
+            maximum: 50
+      responses:
+        '200':
+          description: Paginated notification list with unread count
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/NotificationListResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /notifications/unread-count:
+    get:
+      tags: [notifications]
+      operationId: getUnreadCount
+      summary: Get the number of unread in-app notifications
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Unread count
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  unread:
+                    type: integer
+
+  /notifications/{notificationId}/read:
+    parameters:
+      - $ref: '#/components/parameters/NotificationId'
+    patch:
+      tags: [notifications]
+      operationId: markRead
+      summary: Mark a single notification as read
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Notification marked as read
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /notifications/read-all:
+    patch:
+      tags: [notifications]
+      operationId: markAllRead
+      summary: Mark all unread notifications as read
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: All notifications marked as read
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  updated:
+                    type: integer
+
+  /notifications/{notificationId}:
+    parameters:
+      - $ref: '#/components/parameters/NotificationId'
+
+    delete:
+      tags: [notifications]
+      operationId: deleteNotification
+      summary: Delete a notification from the inbox
+      security:
+        - bearerAuth: []
+      responses:
+        '204':
+          description: Notification deleted
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  # ─── PREFERENCES ────────────────────────────────────────
+  /notifications/preferences:
+    get:
+      tags: [preferences]
+      operationId: getPreferences
+      summary: Get the current user's notification preferences
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Notification preferences
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/NotificationPreferences'
+
+    put:
+      tags: [preferences]
+      operationId: updatePreferences
+      summary: Replace the current user's notification preferences
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/NotificationPreferences'
+      responses:
+        '200':
+          description: Updated preferences
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/NotificationPreferences'
+
+  /notifications/unsubscribe:
+    post:
+      tags: [preferences]
+      operationId: globalUnsubscribe
+      summary: Globally opt out of all marketing communications
+      description: |
+        One-click unsubscribe endpoint (RFC 8058). Can be called
+        with just the signed token in the request body (no JWT needed
+        when token is present — used from email links).
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [token]
+              properties:
+                token:
+                  type: string
+                  description: Signed unsubscribe token from email
+      responses:
+        '200':
+          description: Unsubscribed from all marketing emails
+        '400':
+          description: Invalid or expired token
+
+  # ─── PUSH DEVICE REGISTRATION ───────────────────────────
+  /notifications/push/devices:
+    get:
+      tags: [push]
+      operationId: listDevices
+      summary: List registered push devices for the current user
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Device list
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/PushDevice'
+
+    post:
+      tags: [push]
+      operationId: registerDevice
+      summary: Register a push notification token for a device
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RegisterDeviceRequest'
+      responses:
+        '201':
+          description: Device registered (idempotent on token)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PushDevice'
+
+  /notifications/push/devices/{deviceId}:
+    parameters:
+      - name: deviceId
+        in: path
+        required: true
+        schema:
+          type: string
+
+    delete:
+      tags: [push]
+      operationId: removeDevice
+      summary: Deregister a push device (e.g. on logout)
+      security:
+        - bearerAuth: []
+      responses:
+        '204':
+          description: Device removed
+
+  # ─── TEMPLATES (ADMIN) ──────────────────────────────────
+  /admin/notification-templates:
+    get:
+      tags: [templates]
+      operationId: listTemplates
+      summary: List all notification templates (admin only)
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: channel
+          in: query
+          schema:
+            type: string
+            enum: [email, sms, push, in_app]
+        - name: type
+          in: query
+          schema:
+            $ref: '#/components/schemas/NotificationType'
+      responses:
+        '200':
+          description: Template list
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/NotificationTemplate'
+
+    post:
+      tags: [templates]
+      operationId: createTemplate
+      summary: Create a new notification template (admin only)
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TemplateRequest'
+      responses:
+        '201':
+          description: Template created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/NotificationTemplate'
+
+  /admin/notification-templates/{templateId}:
+    parameters:
+      - name: templateId
+        in: path
+        required: true
+        schema:
+          type: string
+
+    put:
+      tags: [templates]
+      operationId: updateTemplate
+      summary: Update a notification template (admin only)
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TemplateRequest'
+      responses:
+        '200':
+          description: Updated template
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/NotificationTemplate'
+
+    delete:
+      tags: [templates]
+      operationId: deleteTemplate
+      summary: Delete a notification template (admin only)
+      security:
+        - bearerAuth: []
+      responses:
+        '204':
+          description: Template deleted
+
+  # ─── ADMIN SEND ─────────────────────────────────────────
+  /admin/notifications/send:
+    post:
+      tags: [admin]
+      operationId: sendNotification
+      summary: Manually trigger a notification to one or more users (admin only)
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SendNotificationRequest'
+      responses:
+        '202':
+          description: Notification queued for dispatch
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  jobId:
+                    type: string
+                  queued:
+                    type: integer
+                    description: Number of recipients queued
+
+  /admin/notifications/broadcast:
+    post:
+      tags: [admin]
+      operationId: broadcastNotification
+      summary: Broadcast a notification to a user segment (admin only)
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/BroadcastRequest'
+      responses:
+        '202':
+          description: Broadcast job created
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  jobId:
+                    type: string
+
+  /admin/notifications/jobs/{jobId}:
+    get:
+      tags: [admin]
+      operationId: getJobStatus
+      summary: Get delivery status for a send/broadcast job (admin only)
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: jobId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Job status and delivery stats
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/JobStatus'
+
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+
+  parameters:
+    NotificationId:
+      name: notificationId
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+
+  schemas:
+    NotificationType:
+      type: string
+      enum:
+        - order_confirmed
+        - order_shipped
+        - order_delivered
+        - order_cancelled
+        - payment_success
+        - payment_failed
+        - refund_initiated
+        - refund_completed
+        - review_reply
+        - price_drop
+        - back_in_stock
+        - promo
+        - system
+
+    Notification:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        type:
+          $ref: '#/components/schemas/NotificationType'
+        title:
+          type: string
+        body:
+          type: string
+        imageUrl:
+          type: string
+          format: uri
+          nullable: true
+        actionUrl:
+          type: string
+          format: uri
+          nullable: true
+        isRead:
+          type: boolean
+        metadata:
+          type: object
+          additionalProperties: true
+          description: Extra context (orderId, productId, etc.)
+        createdAt:
+          type: string
+          format: date-time
+
+    NotificationListResponse:
+      type: object
+      properties:
+        unreadCount:
+          type: integer
+        data:
+          type: array
+          items:
+            $ref: '#/components/schemas/Notification'
+        pagination:
+          $ref: '#/components/schemas/Pagination'
+
+    ChannelPreference:
+      type: object
+      properties:
+        email:
+          type: boolean
+        sms:
+          type: boolean
+        push:
+          type: boolean
+        inApp:
+          type: boolean
+
+    NotificationPreferences:
+      type: object
+      description: Per-event-type channel toggles
+      properties:
+        orderUpdates:
+          $ref: '#/components/schemas/ChannelPreference'
+        paymentAlerts:
+          $ref: '#/components/schemas/ChannelPreference'
+        promotions:
+          $ref: '#/components/schemas/ChannelPreference'
+        priceDrops:
+          $ref: '#/components/schemas/ChannelPreference'
+        backInStock:
+          $ref: '#/components/schemas/ChannelPreference'
+        reviewReplies:
+          $ref: '#/components/schemas/ChannelPreference'
+        systemAlerts:
+          $ref: '#/components/schemas/ChannelPreference'
+
+    PushDevice:
+      type: object
+      properties:
+        id:
+          type: string
+        platform:
+          type: string
+          enum: [ios, android, web]
+        token:
+          type: string
+        deviceName:
+          type: string
+        createdAt:
+          type: string
+          format: date-time
+
+    RegisterDeviceRequest:
+      type: object
+      required: [token, platform]
+      properties:
+        token:
+          type: string
+          description: FCM / APNs device token
+        platform:
+          type: string
+          enum: [ios, android, web]
+        deviceName:
+          type: string
+
+    NotificationTemplate:
+      type: object
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+        type:
+          $ref: '#/components/schemas/NotificationType'
+        channel:
+          type: string
+          enum: [email, sms, push, in_app]
+        subject:
+          type: string
+          description: Email subject line (email channel only)
+        body:
+          type: string
+          description: Handlebars/Mustache template body with {{variables}}
+        variables:
+          type: array
+          items:
+            type: string
+          description: Required template variables
+        isActive:
+          type: boolean
+        updatedAt:
+          type: string
+          format: date-time
+
+    TemplateRequest:
+      type: object
+      required: [name, type, channel, body]
+      properties:
+        name:
+          type: string
+        type:
+          $ref: '#/components/schemas/NotificationType'
+        channel:
+          type: string
+          enum: [email, sms, push, in_app]
+        subject:
+          type: string
+        body:
+          type: string
+        variables:
+          type: array
+          items:
+            type: string
+        isActive:
+          type: boolean
+          default: true
+
+    SendNotificationRequest:
+      type: object
+      required: [userIds, templateId]
+      properties:
+        userIds:
+          type: array
+          maxItems: 1000
+          items:
+            type: string
+            format: uuid
+        templateId:
+          type: string
+        variables:
+          type: object
+          additionalProperties: true
+          description: Template variable overrides
+        channels:
+          type: array
+          items:
+            type: string
+            enum: [email, sms, push, in_app]
+          description: Override user preference channels
+
+    BroadcastRequest:
+      type: object
+      required: [templateId, segment]
+      properties:
+        templateId:
+          type: string
+        segment:
+          type: string
+          enum: [all_users, active_users, inactive_30d, premium_users, custom]
+        customFilter:
+          type: object
+          description: Custom SQL/query filter (used when segment=custom)
+          additionalProperties: true
+        variables:
+          type: object
+          additionalProperties: true
+        scheduledAt:
+          type: string
+          format: date-time
+          description: Optional future send time
+
+    JobStatus:
+      type: object
+      properties:
+        jobId:
+          type: string
+        status:
+          type: string
+          enum: [queued, processing, completed, failed]
+        total:
+          type: integer
+        sent:
+          type: integer
+        failed:
+          type: integer
+        startedAt:
+          type: string
+          format: date-time
+          nullable: true
+        completedAt:
+          type: string
+          format: date-time
+          nullable: true
+
+    Pagination:
+      type: object
+      properties:
+        total:
+          type: integer
+        page:
+          type: integer
+        limit:
+          type: integer
+        totalPages:
+          type: integer
+        hasNext:
+          type: boolean
+        hasPrev:
+          type: boolean
+
+    ErrorResponse:
+      type: object
+      properties:
+        error:
+          type: string
+        message:
+          type: string
+
+  responses:
+    Unauthorized:
+      description: Missing or invalid authentication
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+    NotFound:
+      description: Resource not found
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'

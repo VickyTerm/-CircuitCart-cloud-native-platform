@@ -1,0 +1,849 @@
+openapi: 3.1.0
+info:
+  title: Circuit Cart - Product Service
+  description: |
+    Product catalog, inventory management, categories, search,
+    reviews & ratings for Circuit Cart IoT E-commerce Platform.
+  version: 1.0.0
+  contact:
+    name: Circuit Cart Dev Team
+    email: your.email@example.com
+
+servers:
+  - url: https://api.circuitcart.com/api/v1
+    description: Production
+  - url: http://localhost:3002/api/v1
+    description: Local Product Service
+
+tags:
+  - name: products
+    description: Product CRUD & browsing
+  - name: categories
+    description: Category hierarchy
+  - name: inventory
+    description: Stock & warehouse management
+  - name: reviews
+    description: Ratings and reviews
+  - name: admin
+    description: Admin-only catalog operations
+
+paths:
+  # ─── PRODUCTS ───────────────────────────────────────────
+  /products:
+    get:
+      tags: [products]
+      operationId: listProducts
+      summary: List / search products with filters and pagination
+      parameters:
+        - name: q
+          in: query
+          description: Full-text search query
+          schema:
+            type: string
+        - name: category
+          in: query
+          schema:
+            type: string
+        - name: minPrice
+          in: query
+          schema:
+            type: number
+            minimum: 0
+        - name: maxPrice
+          in: query
+          schema:
+            type: number
+        - name: inStock
+          in: query
+          schema:
+            type: boolean
+        - name: sortBy
+          in: query
+          schema:
+            type: string
+            enum: [price_asc, price_desc, newest, rating, popularity]
+            default: newest
+        - name: page
+          in: query
+          schema:
+            type: integer
+            minimum: 1
+            default: 1
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 100
+            default: 20
+      responses:
+        '200':
+          description: Paginated product list
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProductListResponse'
+
+    post:
+      tags: [admin]
+      operationId: createProduct
+      summary: Create a new product (admin only)
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateProductRequest'
+      responses:
+        '201':
+          description: Product created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Product'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '422':
+          $ref: '#/components/responses/ValidationError'
+
+  /products/{id}:
+    parameters:
+      - $ref: '#/components/parameters/ProductId'
+
+    get:
+      tags: [products]
+      operationId: getProduct
+      summary: Get full product details by ID
+      responses:
+        '200':
+          description: Product details
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Product'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+    put:
+      tags: [admin]
+      operationId: replaceProduct
+      summary: Replace a product (admin only)
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateProductRequest'
+      responses:
+        '200':
+          description: Product replaced
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Product'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+    patch:
+      tags: [admin]
+      operationId: patchProduct
+      summary: Partially update a product (admin only)
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PatchProductRequest'
+      responses:
+        '200':
+          description: Product updated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Product'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+    delete:
+      tags: [admin]
+      operationId: deleteProduct
+      summary: Soft-delete a product (admin only)
+      security:
+        - bearerAuth: []
+      responses:
+        '204':
+          description: Product deleted
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /products/{id}/images:
+    parameters:
+      - $ref: '#/components/parameters/ProductId'
+
+    post:
+      tags: [admin]
+      operationId: uploadProductImages
+      summary: Upload product images (multipart, up to 8 files)
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              properties:
+                images:
+                  type: array
+                  maxItems: 8
+                  items:
+                    type: string
+                    format: binary
+      responses:
+        '200':
+          description: Uploaded image URLs
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  urls:
+                    type: array
+                    items:
+                      type: string
+                      format: uri
+
+  /products/{id}/related:
+    parameters:
+      - $ref: '#/components/parameters/ProductId'
+    get:
+      tags: [products]
+      operationId: getRelatedProducts
+      summary: Get related / recommended products
+      parameters:
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            default: 6
+            maximum: 20
+      responses:
+        '200':
+          description: Related products
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/ProductSummary'
+
+  # ─── CATEGORIES ─────────────────────────────────────────
+  /categories:
+    get:
+      tags: [categories]
+      operationId: listCategories
+      summary: Get full category tree
+      responses:
+        '200':
+          description: Category hierarchy
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Category'
+
+    post:
+      tags: [admin]
+      operationId: createCategory
+      summary: Create a category (admin only)
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CategoryRequest'
+      responses:
+        '201':
+          description: Category created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Category'
+
+  /categories/{slug}:
+    get:
+      tags: [categories]
+      operationId: getCategoryProducts
+      summary: List products within a category (supports subcategories)
+      parameters:
+        - name: slug
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: page
+          in: query
+          schema:
+            type: integer
+            default: 1
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            default: 20
+            maximum: 100
+      responses:
+        '200':
+          description: Products in category
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProductListResponse'
+
+  # ─── INVENTORY ──────────────────────────────────────────
+  /products/{id}/inventory:
+    parameters:
+      - $ref: '#/components/parameters/ProductId'
+
+    get:
+      tags: [inventory]
+      operationId: getInventory
+      summary: Get current stock level for a product
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Stock info
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Inventory'
+
+    patch:
+      tags: [admin]
+      operationId: adjustInventory
+      summary: Adjust stock (restock, correction, reserve)
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/InventoryAdjustRequest'
+      responses:
+        '200':
+          description: Updated inventory
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Inventory'
+
+  /inventory/low-stock:
+    get:
+      tags: [admin]
+      operationId: getLowStockProducts
+      summary: Get products below reorder threshold (admin only)
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: threshold
+          in: query
+          schema:
+            type: integer
+            default: 10
+      responses:
+        '200':
+          description: Low-stock product list
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/LowStockItem'
+
+  # ─── REVIEWS ────────────────────────────────────────────
+  /products/{id}/reviews:
+    parameters:
+      - $ref: '#/components/parameters/ProductId'
+
+    get:
+      tags: [reviews]
+      operationId: listReviews
+      summary: Get paginated reviews for a product
+      parameters:
+        - name: rating
+          in: query
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 5
+        - name: sortBy
+          in: query
+          schema:
+            type: string
+            enum: [newest, helpful, rating_asc, rating_desc]
+            default: newest
+        - name: page
+          in: query
+          schema:
+            type: integer
+            default: 1
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            default: 10
+      responses:
+        '200':
+          description: Reviews with summary stats
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ReviewListResponse'
+
+    post:
+      tags: [reviews]
+      operationId: submitReview
+      summary: Submit a review (one per product per user, requires purchase)
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ReviewRequest'
+      responses:
+        '201':
+          description: Review submitted (may be pending moderation)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Review'
+        '409':
+          description: Review already submitted for this product
+        '422':
+          $ref: '#/components/responses/ValidationError'
+
+  /products/{id}/reviews/{reviewId}:
+    parameters:
+      - $ref: '#/components/parameters/ProductId'
+      - name: reviewId
+        in: path
+        required: true
+        schema:
+          type: string
+
+    patch:
+      tags: [reviews]
+      operationId: updateReview
+      summary: Edit own review
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ReviewRequest'
+      responses:
+        '200':
+          description: Updated review
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Review'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+    delete:
+      tags: [reviews]
+      operationId: deleteReview
+      summary: Delete own review (admin can delete any)
+      security:
+        - bearerAuth: []
+      responses:
+        '204':
+          description: Review deleted
+
+  /products/{id}/reviews/{reviewId}/helpful:
+    parameters:
+      - $ref: '#/components/parameters/ProductId'
+      - name: reviewId
+        in: path
+        required: true
+        schema:
+          type: string
+    post:
+      tags: [reviews]
+      operationId: markReviewHelpful
+      summary: Mark a review as helpful
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Helpful count updated
+
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+
+  parameters:
+    ProductId:
+      name: id
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+
+  schemas:
+    ProductSummary:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        name:
+          type: string
+        slug:
+          type: string
+        price:
+          type: number
+          format: float
+        discountedPrice:
+          type: number
+          format: float
+          nullable: true
+        primaryImage:
+          type: string
+          format: uri
+        rating:
+          type: number
+          format: float
+          minimum: 0
+          maximum: 5
+        reviewCount:
+          type: integer
+        inStock:
+          type: boolean
+        category:
+          type: string
+
+    Product:
+      allOf:
+        - $ref: '#/components/schemas/ProductSummary'
+        - type: object
+          properties:
+            description:
+              type: string
+            images:
+              type: array
+              items:
+                type: string
+                format: uri
+            specs:
+              type: object
+              additionalProperties: true
+              description: Flexible key-value IoT specifications
+            stock:
+              type: integer
+            sku:
+              type: string
+            brand:
+              type: string
+            tags:
+              type: array
+              items:
+                type: string
+            createdAt:
+              type: string
+              format: date-time
+            updatedAt:
+              type: string
+              format: date-time
+
+    ProductListResponse:
+      type: object
+      properties:
+        data:
+          type: array
+          items:
+            $ref: '#/components/schemas/ProductSummary'
+        pagination:
+          $ref: '#/components/schemas/Pagination'
+
+    CreateProductRequest:
+      type: object
+      required: [name, price, category, stock]
+      properties:
+        name:
+          type: string
+          maxLength: 255
+        description:
+          type: string
+        price:
+          type: number
+          minimum: 0
+        discountedPrice:
+          type: number
+          nullable: true
+        category:
+          type: string
+        stock:
+          type: integer
+          minimum: 0
+        sku:
+          type: string
+        brand:
+          type: string
+        tags:
+          type: array
+          items:
+            type: string
+        specs:
+          type: object
+          additionalProperties: true
+
+    PatchProductRequest:
+      type: object
+      minProperties: 1
+      properties:
+        name:
+          type: string
+        description:
+          type: string
+        price:
+          type: number
+        discountedPrice:
+          type: number
+          nullable: true
+        stock:
+          type: integer
+        tags:
+          type: array
+          items:
+            type: string
+        specs:
+          type: object
+          additionalProperties: true
+
+    Category:
+      type: object
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+        slug:
+          type: string
+        description:
+          type: string
+        imageUrl:
+          type: string
+          format: uri
+        parentId:
+          type: string
+          nullable: true
+        children:
+          type: array
+          items:
+            $ref: '#/components/schemas/Category'
+        productCount:
+          type: integer
+
+    CategoryRequest:
+      type: object
+      required: [name]
+      properties:
+        name:
+          type: string
+        description:
+          type: string
+        parentId:
+          type: string
+          nullable: true
+
+    Inventory:
+      type: object
+      properties:
+        productId:
+          type: string
+        available:
+          type: integer
+        reserved:
+          type: integer
+        reorderThreshold:
+          type: integer
+        updatedAt:
+          type: string
+          format: date-time
+
+    InventoryAdjustRequest:
+      type: object
+      required: [type, quantity]
+      properties:
+        type:
+          type: string
+          enum: [restock, correction, reserve, release]
+        quantity:
+          type: integer
+        reason:
+          type: string
+
+    LowStockItem:
+      type: object
+      properties:
+        productId:
+          type: string
+        productName:
+          type: string
+        available:
+          type: integer
+        reorderThreshold:
+          type: integer
+
+    Review:
+      type: object
+      properties:
+        id:
+          type: string
+        userId:
+          type: string
+        userFullName:
+          type: string
+        rating:
+          type: integer
+          minimum: 1
+          maximum: 5
+        comment:
+          type: string
+        helpfulCount:
+          type: integer
+        verified:
+          type: boolean
+          description: True if user purchased the product
+        status:
+          type: string
+          enum: [pending, approved, rejected]
+        createdAt:
+          type: string
+          format: date-time
+
+    ReviewRequest:
+      type: object
+      required: [rating, comment]
+      properties:
+        rating:
+          type: integer
+          minimum: 1
+          maximum: 5
+        comment:
+          type: string
+          minLength: 10
+          maxLength: 2000
+        images:
+          type: array
+          maxItems: 5
+          items:
+            type: string
+            format: uri
+
+    ReviewListResponse:
+      type: object
+      properties:
+        summary:
+          type: object
+          properties:
+            averageRating:
+              type: number
+              format: float
+            totalReviews:
+              type: integer
+            distribution:
+              type: object
+              description: "Key: star rating (1-5), Value: count"
+              additionalProperties:
+                type: integer
+        data:
+          type: array
+          items:
+            $ref: '#/components/schemas/Review'
+        pagination:
+          $ref: '#/components/schemas/Pagination'
+
+    Pagination:
+      type: object
+      properties:
+        total:
+          type: integer
+        page:
+          type: integer
+        limit:
+          type: integer
+        totalPages:
+          type: integer
+        hasNext:
+          type: boolean
+        hasPrev:
+          type: boolean
+
+    ErrorResponse:
+      type: object
+      properties:
+        error:
+          type: string
+        message:
+          type: string
+        details:
+          type: array
+          items:
+            type: object
+            properties:
+              field:
+                type: string
+              issue:
+                type: string
+
+  responses:
+    Unauthorized:
+      description: Missing or invalid authentication
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+    Forbidden:
+      description: Insufficient permissions
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+    NotFound:
+      description: Resource not found
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+    ValidationError:
+      description: Validation failed
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
