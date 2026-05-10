@@ -10,7 +10,7 @@
     <path d="M8 1L2 5L8 9" fill="none" stroke="context-stroke" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
   </marker>
 </defs>
-<rect x="0" y="0" width="680" height="1100" fill="white"/>
+<rect x="0" y="0" width="680" height="1100" fill="#F2F0E8"/>
 <!-- ═══════════════════════════════════════════════════════ -->
 <!-- TIER LABELS (left margin) -->
 <!-- ═══════════════════════════════════════════════════════ -->
