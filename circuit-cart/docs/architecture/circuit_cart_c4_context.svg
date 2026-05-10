@@ -41,6 +41,7 @@
   </defs>
 
   <!-- Boundary -->
+  <rect x="0" y="0" width="900" height="700" fill="white"/>
   <rect class="boundary" x="24" y="24" width="852" height="652" rx="18"/>
   <text class="boundary-lbl" x="42" y="48">System context — Circuit Cart</text>
 
