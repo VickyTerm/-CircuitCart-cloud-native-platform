@@ -1,0 +1,202 @@
+<svg width="960" height="1020" viewBox="0 0 960 1020" role="img" xmlns="http://www.w3.org/2000/svg">
+  <title>Circuit Cart — Full Architecture Diagram</title>
+  <desc>Architecture diagram showing AWS infrastructure, Kubernetes microservices, data layer, and CI/CD observability for Circuit Cart.</desc>
+
+  <defs>
+    <marker id="arrow" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+      <path d="M2 1L8 5L2 9" fill="none" stroke="#999" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+    </marker>
+    <style>
+      * { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }
+      .title     { font-size: 13px; font-weight: 600; }
+      .sub       { font-size: 11px; }
+      .tag       { font-size: 10px; opacity: 0.6; }
+      .section   { font-size: 12px; font-weight: 700; letter-spacing: 0.5px; }
+      .conn      { fill: none; stroke: #AAAAAA; stroke-width: 1.2; }
+      .conn-dash { fill: none; stroke: #AAAAAA; stroke-width: 1; stroke-dasharray: 5 3; }
+      .edge-lbl  { font-size: 10px; fill: #777; }
+    </style>
+  </defs>
+
+  <!-- White background -->
+  <rect x="0" y="0" width="960" height="1020" fill="white"/>
+
+  <!-- ═══════════════════════════════════════════
+       SECTION LABELS
+  ═══════════════════════════════════════════ -->
+
+  <!-- Section: Internet -->
+  <text class="section" x="480" y="36" text-anchor="middle" fill="#888">INTERNET</text>
+
+  <!-- Section: AWS Infra -->
+  <text class="section" x="480" y="198" text-anchor="middle" fill="#888">AWS INFRASTRUCTURE</text>
+
+  <!-- Section: Kubernetes -->
+  <rect x="40" y="340" width="880" height="280" rx="14"
+        fill="#F0F6FF" stroke="#B5D4F4" stroke-width="1.2" stroke-dasharray="6 3"/>
+  <text class="section" x="68" y="364" fill="#185FA5">KUBERNETES CLUSTER — AWS EKS</text>
+
+  <!-- Section: Data Layer -->
+  <text class="section" x="480" y="668" text-anchor="middle" fill="#888">DATA LAYER</text>
+
+  <!-- Section: CI/CD + Observability -->
+  <rect x="40" y="836" width="880" height="148" rx="14"
+        fill="#F4F9EE" stroke="#C0DD97" stroke-width="1.2" stroke-dasharray="6 3"/>
+  <text class="section" x="68" y="858" fill="#3B6D11">CI/CD + OBSERVABILITY</text>
+
+  <!-- ═══════════════════════════════════════════
+       END USERS
+  ═══════════════════════════════════════════ -->
+  <rect x="360" y="44" width="240" height="56" rx="12"
+        fill="#EEEDFE" stroke="#534AB7" stroke-width="1"/>
+  <text class="title" x="480" y="68" text-anchor="middle" dominant-baseline="central" fill="#26215C">End Users</text>
+  <text class="sub"   x="480" y="86" text-anchor="middle" dominant-baseline="central" fill="#534AB7">Browser / Mobile</text>
+
+  <!-- ═══════════════════════════════════════════
+       AWS LOAD BALANCER
+  ═══════════════════════════════════════════ -->
+  <rect x="360" y="208" width="240" height="56" rx="12"
+        fill="#FAEEDA" stroke="#854F0B" stroke-width="1"/>
+  <text class="title" x="480" y="228" text-anchor="middle" dominant-baseline="central" fill="#412402">AWS Load Balancer</text>
+  <text class="sub"   x="480" y="246" text-anchor="middle" dominant-baseline="central" fill="#854F0B">Elastic Load Balancing</text>
+
+  <!-- ═══════════════════════════════════════════
+       NGINX INGRESS
+  ═══════════════════════════════════════════ -->
+  <rect x="360" y="284" width="240" height="56" rx="12"
+        fill="#E1F5EE" stroke="#0F6E56" stroke-width="1"/>
+  <text class="title" x="480" y="304" text-anchor="middle" dominant-baseline="central" fill="#085041">NGINX Ingress Controller</text>
+  <text class="sub"   x="480" y="322" text-anchor="middle" dominant-baseline="central" fill="#0F6E56">Routes traffic into cluster</text>
+
+  <!-- ═══════════════════════════════════════════
+       MICROSERVICES — Row 1 (4 boxes)
+       x positions: 60 240 420 600   width=150
+  ═══════════════════════════════════════════ -->
+
+  <!-- Auth Service -->
+  <rect x="60"  y="380" width="150" height="56" rx="10" fill="#E6F1FB" stroke="#185FA5" stroke-width="1"/>
+  <text class="title" x="135" y="400" text-anchor="middle" dominant-baseline="central" fill="#042C53">Auth Service</text>
+  <text class="sub"   x="135" y="420" text-anchor="middle" dominant-baseline="central" fill="#185FA5">JWT / OAuth2</text>
+
+  <!-- Product Service -->
+  <rect x="240" y="380" width="150" height="56" rx="10" fill="#E6F1FB" stroke="#185FA5" stroke-width="1"/>
+  <text class="title" x="315" y="400" text-anchor="middle" dominant-baseline="central" fill="#042C53">Product Service</text>
+  <text class="sub"   x="315" y="420" text-anchor="middle" dominant-baseline="central" fill="#185FA5">Catalog &amp; Search</text>
+
+  <!-- Cart Service -->
+  <rect x="420" y="380" width="150" height="56" rx="10" fill="#E6F1FB" stroke="#185FA5" stroke-width="1"/>
+  <text class="title" x="495" y="400" text-anchor="middle" dominant-baseline="central" fill="#042C53">Cart Service</text>
+  <text class="sub"   x="495" y="420" text-anchor="middle" dominant-baseline="central" fill="#185FA5">Session &amp; Items</text>
+
+  <!-- Order Service -->
+  <rect x="600" y="380" width="150" height="56" rx="10" fill="#E6F1FB" stroke="#185FA5" stroke-width="1"/>
+  <text class="title" x="675" y="400" text-anchor="middle" dominant-baseline="central" fill="#042C53">Order Service</text>
+  <text class="sub"   x="675" y="420" text-anchor="middle" dominant-baseline="central" fill="#185FA5">Lifecycle &amp; History</text>
+
+  <!-- ═══════════════════════════════════════════
+       MICROSERVICES — Row 2 (3 boxes)
+       x positions: 150 390 630   width=160
+  ═══════════════════════════════════════════ -->
+
+  <!-- Payment Service -->
+  <rect x="150" y="468" width="160" height="56" rx="10" fill="#FAECE7" stroke="#993C1D" stroke-width="1"/>
+  <text class="title" x="230" y="488" text-anchor="middle" dominant-baseline="central" fill="#4A1B0C">Payment Service</text>
+  <text class="sub"   x="230" y="508" text-anchor="middle" dominant-baseline="central" fill="#993C1D">Stripe Integration</text>
+
+  <!-- Inventory Service -->
+  <rect x="390" y="468" width="160" height="56" rx="10" fill="#FAECE7" stroke="#993C1D" stroke-width="1"/>
+  <text class="title" x="470" y="488" text-anchor="middle" dominant-baseline="central" fill="#4A1B0C">Inventory Service</text>
+  <text class="sub"   x="470" y="508" text-anchor="middle" dominant-baseline="central" fill="#993C1D">Stock Management</text>
+
+  <!-- Notify Service -->
+  <rect x="630" y="468" width="160" height="56" rx="10" fill="#FAECE7" stroke="#993C1D" stroke-width="1"/>
+  <text class="title" x="710" y="488" text-anchor="middle" dominant-baseline="central" fill="#4A1B0C">Notify Service</text>
+  <text class="sub"   x="710" y="508" text-anchor="middle" dominant-baseline="central" fill="#993C1D">Email &amp; SMS Alerts</text>
+
+  <!-- ═══════════════════════════════════════════
+       DATA LAYER  (3 boxes side by side)
+       PostgreSQL x=80  Redis x=380  S3 x=670
+  ═══════════════════════════════════════════ -->
+
+  <!-- PostgreSQL RDS -->
+  <rect x="80"  y="680" width="220" height="72" rx="12" fill="#EAF3DE" stroke="#3B6D11" stroke-width="1"/>
+  <text class="title" x="190" y="704" text-anchor="middle" dominant-baseline="central" fill="#173404">PostgreSQL RDS</text>
+  <text class="sub"   x="190" y="724" text-anchor="middle" dominant-baseline="central" fill="#3B6D11">Primary datastore</text>
+
+  <!-- Redis Cache -->
+  <rect x="370" y="680" width="220" height="72" rx="12" fill="#EAF3DE" stroke="#3B6D11" stroke-width="1"/>
+  <text class="title" x="480" y="704" text-anchor="middle" dominant-baseline="central" fill="#173404">Redis Cache</text>
+  <text class="sub"   x="480" y="724" text-anchor="middle" dominant-baseline="central" fill="#3B6D11">Sessions &amp; hot data</text>
+
+  <!-- S3 Object Storage -->
+  <rect x="660" y="680" width="220" height="72" rx="12" fill="#EAF3DE" stroke="#3B6D11" stroke-width="1"/>
+  <text class="title" x="770" y="704" text-anchor="middle" dominant-baseline="central" fill="#173404">S3 Object Storage</text>
+  <text class="sub"   x="770" y="724" text-anchor="middle" dominant-baseline="central" fill="#3B6D11">Assets &amp; media</text>
+
+  <!-- ═══════════════════════════════════════════
+       CI/CD ROW
+  ═══════════════════════════════════════════ -->
+
+  <!-- GitHub -->
+  <rect x="68"  y="868" width="120" height="52" rx="10" fill="#F1EFE8" stroke="#888780" stroke-width="1"/>
+  <text class="title" x="128" y="892" text-anchor="middle" dominant-baseline="central" fill="#2C2C2A">GitHub</text>
+  <text class="sub"   x="128" y="908" text-anchor="middle" dominant-baseline="central" fill="#5F5E5A">Source control</text>
+
+  <!-- GitHub Actions -->
+  <rect x="212" y="868" width="140" height="52" rx="10" fill="#F1EFE8" stroke="#888780" stroke-width="1"/>
+  <text class="title" x="282" y="886" text-anchor="middle" dominant-baseline="central" fill="#2C2C2A">GitHub Actions</text>
+  <text class="sub"   x="282" y="904" text-anchor="middle" dominant-baseline="central" fill="#5F5E5A">Build &amp; test</text>
+
+  <!-- Docker / ECR -->
+  <rect x="368" y="868" width="140" height="52" rx="10" fill="#F1EFE8" stroke="#888780" stroke-width="1"/>
+  <text class="title" x="438" y="886" text-anchor="middle" dominant-baseline="central" fill="#2C2C2A">Docker / ECR</text>
+  <text class="sub"   x="438" y="904" text-anchor="middle" dominant-baseline="central" fill="#5F5E5A">Container registry</text>
+
+  <!-- Prometheus / Grafana -->
+  <rect x="524" y="868" width="160" height="52" rx="10" fill="#FAEEDA" stroke="#854F0B" stroke-width="1"/>
+  <text class="title" x="604" y="886" text-anchor="middle" dominant-baseline="central" fill="#412402">Prometheus / Grafana</text>
+  <text class="sub"   x="604" y="904" text-anchor="middle" dominant-baseline="central" fill="#854F0B">Metrics &amp; dashboards</text>
+
+  <!-- Loki / CloudWatch -->
+  <rect x="700" y="868" width="160" height="52" rx="10" fill="#FAEEDA" stroke="#854F0B" stroke-width="1"/>
+  <text class="title" x="780" y="886" text-anchor="middle" dominant-baseline="central" fill="#412402">Loki / CloudWatch</text>
+  <text class="sub"   x="780" y="904" text-anchor="middle" dominant-baseline="central" fill="#854F0B">Logs &amp; alerts</text>
+
+  <!-- ═══════════════════════════════════════════
+       CONNECTORS
+  ═══════════════════════════════════════════ -->
+
+  <!-- End Users → Load Balancer -->
+  <line class="conn" x1="480" y1="100" x2="480" y2="208" marker-end="url(#arrow)"/>
+  <rect x="398" y="148" width="86" height="16" rx="3" fill="white" opacity="0.9"/>
+  <text class="edge-lbl" x="441" y="159" text-anchor="middle">HTTPS requests</text>
+
+  <!-- Load Balancer → NGINX -->
+  <line class="conn" x1="480" y1="264" x2="480" y2="284" marker-end="url(#arrow)"/>
+
+  <!-- NGINX → Microservices (fan out) -->
+  <line class="conn" x1="420" y1="340" x2="135" y2="380" marker-end="url(#arrow)"/>
+  <line class="conn" x1="448" y1="340" x2="315" y2="380" marker-end="url(#arrow)"/>
+  <line class="conn" x1="512" y1="340" x2="495" y2="380" marker-end="url(#arrow)"/>
+  <line class="conn" x1="540" y1="340" x2="675" y2="380" marker-end="url(#arrow)"/>
+
+  <!-- Services → Data Layer (dashed) -->
+  <line class="conn-dash" x1="135" y1="436" x2="190" y2="680" marker-end="url(#arrow)"/>
+  <line class="conn-dash" x1="315" y1="436" x2="350" y2="680" marker-end="url(#arrow)"/>
+  <line class="conn-dash" x1="495" y1="436" x2="480" y2="680" marker-end="url(#arrow)"/>
+  <line class="conn-dash" x1="675" y1="436" x2="690" y2="680" marker-end="url(#arrow)"/>
+  <line class="conn-dash" x1="230" y1="524" x2="190" y2="680" marker-end="url(#arrow)"/>
+  <line class="conn-dash" x1="710" y1="524" x2="770" y2="680" marker-end="url(#arrow)"/>
+
+  <!-- CI/CD pipeline arrows -->
+  <line class="conn" x1="188" y1="894" x2="212" y2="894" marker-end="url(#arrow)"/>
+  <line class="conn" x1="352" y1="894" x2="368" y2="894" marker-end="url(#arrow)"/>
+  <line class="conn" x1="508" y1="894" x2="524" y2="894" marker-end="url(#arrow)"/>
+  <line class="conn" x1="684" y1="894" x2="700" y2="894" marker-end="url(#arrow)"/>
+
+  <!-- ECR → EKS (deploy) -->
+  <path class="conn" d="M 438 868 L 438 820 L 480 820 L 480 636" marker-end="url(#arrow)"/>
+  <rect x="388" y="808" width="84" height="16" rx="3" fill="white" opacity="0.9"/>
+  <text class="edge-lbl" x="430" y="819" text-anchor="middle">Deploy to EKS</text>
+
+</svg>
