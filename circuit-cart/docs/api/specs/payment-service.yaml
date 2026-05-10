@@ -1,0 +1,828 @@
+openapi: 3.1.0
+info:
+  title: Circuit Cart - Payment Service
+  description: |
+    Payment initiation, verification, webhook handling, refunds,
+    saved payment methods, and transaction history for Circuit Cart.
+    Integrates with Razorpay / Stripe. Webhook endpoints are public
+    and secured by provider signature verification, not JWT.
+  version: 1.0.0
+  contact:
+    name: Circuit Cart Dev Team
+    email: your.email@example.com
+
+servers:
+  - url: https://api.circuitcart.com/api/v1
+    description: Production
+  - url: http://localhost:3004/api/v1
+    description: Local Payment Service
+
+tags:
+  - name: payments
+    description: Payment initiation & verification
+  - name: methods
+    description: Saved payment methods (cards, UPI, wallets)
+  - name: refunds
+    description: Refund management
+  - name: transactions
+    description: Transaction history
+  - name: webhooks
+    description: Payment provider webhooks (provider-signed, no JWT)
+  - name: admin
+    description: Admin payment operations
+
+paths:
+  # ─── PAYMENT INITIATION ─────────────────────────────────
+  /payments/initiate:
+    post:
+      tags: [payments]
+      operationId: initiatePayment
+      summary: Create a payment intent / order for an Order ID
+      description: |
+        Creates a payment session with the upstream provider (Razorpay/Stripe).
+        Returns a provider-specific client token that the frontend uses to
+        render the payment UI. Idempotent on `orderId`.
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/InitiatePaymentRequest'
+      responses:
+        '200':
+          description: Payment session created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PaymentSession'
+        '400':
+          description: Order already paid or not in payable state
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /payments/verify:
+    post:
+      tags: [payments]
+      operationId: verifyPayment
+      summary: Verify a completed payment and confirm the order
+      description: |
+        Called after the frontend payment flow completes.
+        Validates the provider signature, marks the payment as captured,
+        and fires the order-confirmed event.
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/VerifyPaymentRequest'
+      responses:
+        '200':
+          description: Payment verified; order confirmed
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PaymentResult'
+        '400':
+          description: Signature mismatch or already processed
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /payments/{paymentId}:
+    parameters:
+      - $ref: '#/components/parameters/PaymentId'
+
+    get:
+      tags: [payments]
+      operationId: getPayment
+      summary: Get payment details by ID
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Payment record
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Payment'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /payments/order/{orderId}:
+    parameters:
+      - name: orderId
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+
+    get:
+      tags: [payments]
+      operationId: getPaymentByOrder
+      summary: Get payment record associated with an order
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Payment record
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Payment'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  # ─── SAVED PAYMENT METHODS ──────────────────────────────
+  /payments/methods:
+    get:
+      tags: [methods]
+      operationId: listPaymentMethods
+      summary: List all saved payment methods for the authenticated user
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Saved payment methods
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/PaymentMethod'
+
+    post:
+      tags: [methods]
+      operationId: savePaymentMethod
+      summary: Save a new payment method (tokenised by provider)
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SavePaymentMethodRequest'
+      responses:
+        '201':
+          description: Payment method saved
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PaymentMethod'
+        '409':
+          description: Method already saved
+
+  /payments/methods/{methodId}:
+    parameters:
+      - name: methodId
+        in: path
+        required: true
+        schema:
+          type: string
+
+    delete:
+      tags: [methods]
+      operationId: deletePaymentMethod
+      summary: Remove a saved payment method
+      security:
+        - bearerAuth: []
+      responses:
+        '204':
+          description: Method removed
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /payments/methods/{methodId}/default:
+    parameters:
+      - name: methodId
+        in: path
+        required: true
+        schema:
+          type: string
+
+    patch:
+      tags: [methods]
+      operationId: setDefaultPaymentMethod
+      summary: Set a saved method as the default
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Default updated
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  # ─── REFUNDS ────────────────────────────────────────────
+  /payments/{paymentId}/refund:
+    parameters:
+      - $ref: '#/components/parameters/PaymentId'
+
+    post:
+      tags: [refunds]
+      operationId: initiateRefund
+      summary: Initiate a full or partial refund (admin or system)
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RefundRequest'
+      responses:
+        '202':
+          description: Refund queued (async; may take 3-5 business days)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Refund'
+        '400':
+          description: Amount exceeds capturable amount or already refunded
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /payments/{paymentId}/refunds:
+    parameters:
+      - $ref: '#/components/parameters/PaymentId'
+
+    get:
+      tags: [refunds]
+      operationId: listRefunds
+      summary: List all refunds for a payment
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Refund list
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Refund'
+
+  /refunds/{refundId}:
+    get:
+      tags: [refunds]
+      operationId: getRefund
+      summary: Get refund status
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: refundId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Refund record
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Refund'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  # ─── TRANSACTIONS ───────────────────────────────────────
+  /transactions:
+    get:
+      tags: [transactions]
+      operationId: listTransactions
+      summary: List the current user's transaction history
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: type
+          in: query
+          schema:
+            type: string
+            enum: [payment, refund, all]
+            default: all
+        - name: from
+          in: query
+          schema:
+            type: string
+            format: date
+        - name: to
+          in: query
+          schema:
+            type: string
+            format: date
+        - name: page
+          in: query
+          schema:
+            type: integer
+            default: 1
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            default: 20
+            maximum: 100
+      responses:
+        '200':
+          description: Paginated transactions
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TransactionListResponse'
+
+  # ─── WEBHOOKS ───────────────────────────────────────────
+  /webhooks/razorpay:
+    post:
+      tags: [webhooks]
+      operationId: razorpayWebhook
+      summary: Razorpay event webhook endpoint
+      description: |
+        Secured by `X-Razorpay-Signature` header (HMAC-SHA256).
+        No JWT required. Events handled: payment.captured,
+        payment.failed, refund.processed, order.paid.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/WebhookPayload'
+      responses:
+        '200':
+          description: Event acknowledged
+        '400':
+          description: Signature verification failed
+
+  /webhooks/stripe:
+    post:
+      tags: [webhooks]
+      operationId: stripeWebhook
+      summary: Stripe event webhook endpoint
+      description: |
+        Secured by `Stripe-Signature` header (Stripe webhook secret).
+        No JWT required. Events handled: payment_intent.succeeded,
+        payment_intent.payment_failed, charge.refunded.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/WebhookPayload'
+      responses:
+        '200':
+          description: Event acknowledged
+        '400':
+          description: Signature verification failed
+
+  # ─── ADMIN ──────────────────────────────────────────────
+  /admin/payments:
+    get:
+      tags: [admin]
+      operationId: adminListPayments
+      summary: List all payments across users (admin only)
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: status
+          in: query
+          schema:
+            $ref: '#/components/schemas/PaymentStatus'
+        - name: method
+          in: query
+          schema:
+            type: string
+        - name: from
+          in: query
+          schema:
+            type: string
+            format: date
+        - name: to
+          in: query
+          schema:
+            type: string
+            format: date
+        - name: page
+          in: query
+          schema:
+            type: integer
+            default: 1
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            default: 25
+      responses:
+        '200':
+          description: All payments (paginated)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TransactionListResponse'
+
+  /admin/payments/stats:
+    get:
+      tags: [admin]
+      operationId: getPaymentStats
+      summary: Revenue and refund summary stats (admin only)
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: from
+          in: query
+          schema:
+            type: string
+            format: date
+        - name: to
+          in: query
+          schema:
+            type: string
+            format: date
+        - name: groupBy
+          in: query
+          schema:
+            type: string
+            enum: [day, week, month]
+            default: day
+      responses:
+        '200':
+          description: Aggregated payment stats
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PaymentStats'
+
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+
+  parameters:
+    PaymentId:
+      name: paymentId
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+
+  schemas:
+    PaymentStatus:
+      type: string
+      enum:
+        - pending
+        - captured
+        - failed
+        - refunded
+        - partially_refunded
+        - cancelled
+
+    InitiatePaymentRequest:
+      type: object
+      required: [orderId, method]
+      properties:
+        orderId:
+          type: string
+          format: uuid
+        method:
+          type: string
+          enum: [card, upi, netbanking, wallet, cod]
+        savedMethodId:
+          type: string
+          nullable: true
+          description: ID of a previously saved payment method
+
+    PaymentSession:
+      type: object
+      properties:
+        paymentId:
+          type: string
+          format: uuid
+        provider:
+          type: string
+          enum: [razorpay, stripe]
+        providerOrderId:
+          type: string
+        clientSecret:
+          type: string
+          description: Provider-specific token for frontend SDK
+        amount:
+          type: number
+        currency:
+          type: string
+          default: INR
+        expiresAt:
+          type: string
+          format: date-time
+
+    VerifyPaymentRequest:
+      type: object
+      required: [paymentId, providerPaymentId, providerSignature]
+      properties:
+        paymentId:
+          type: string
+          format: uuid
+        providerPaymentId:
+          type: string
+          description: Payment ID returned by the provider SDK
+        providerOrderId:
+          type: string
+        providerSignature:
+          type: string
+          description: Signature returned by provider SDK for client-side verification
+
+    PaymentResult:
+      type: object
+      properties:
+        success:
+          type: boolean
+        paymentId:
+          type: string
+          format: uuid
+        orderId:
+          type: string
+          format: uuid
+        amount:
+          type: number
+        currency:
+          type: string
+        method:
+          type: string
+        capturedAt:
+          type: string
+          format: date-time
+
+    Payment:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        orderId:
+          type: string
+          format: uuid
+        userId:
+          type: string
+          format: uuid
+        status:
+          $ref: '#/components/schemas/PaymentStatus'
+        method:
+          type: string
+        amount:
+          type: number
+        currency:
+          type: string
+        providerPaymentId:
+          type: string
+        providerOrderId:
+          type: string
+        capturedAt:
+          type: string
+          format: date-time
+          nullable: true
+        failureReason:
+          type: string
+          nullable: true
+        refundedAmount:
+          type: number
+        createdAt:
+          type: string
+          format: date-time
+
+    PaymentMethod:
+      type: object
+      properties:
+        id:
+          type: string
+        type:
+          type: string
+          enum: [card, upi, wallet]
+        isDefault:
+          type: boolean
+        card:
+          type: object
+          nullable: true
+          properties:
+            brand:
+              type: string
+              example: Visa
+            last4:
+              type: string
+              example: "4242"
+            expiryMonth:
+              type: integer
+            expiryYear:
+              type: integer
+        upi:
+          type: object
+          nullable: true
+          properties:
+            vpa:
+              type: string
+              example: vicky@okaxis
+        wallet:
+          type: object
+          nullable: true
+          properties:
+            provider:
+              type: string
+              example: Paytm
+
+    SavePaymentMethodRequest:
+      type: object
+      required: [providerToken, type]
+      properties:
+        type:
+          type: string
+          enum: [card, upi, wallet]
+        providerToken:
+          type: string
+          description: Tokenised method from provider SDK (never raw card data)
+        setAsDefault:
+          type: boolean
+          default: false
+
+    RefundRequest:
+      type: object
+      required: [amount, reason]
+      properties:
+        amount:
+          type: number
+          minimum: 0
+          description: Partial or full refund amount
+        reason:
+          type: string
+          enum: [order_cancelled, return_accepted, duplicate_charge, customer_request, other]
+        notes:
+          type: string
+          maxLength: 500
+
+    Refund:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        paymentId:
+          type: string
+          format: uuid
+        amount:
+          type: number
+        currency:
+          type: string
+        status:
+          type: string
+          enum: [queued, processing, succeeded, failed]
+        reason:
+          type: string
+        providerRefundId:
+          type: string
+          nullable: true
+        createdAt:
+          type: string
+          format: date-time
+        processedAt:
+          type: string
+          format: date-time
+          nullable: true
+
+    Transaction:
+      type: object
+      properties:
+        id:
+          type: string
+        type:
+          type: string
+          enum: [payment, refund]
+        amount:
+          type: number
+        currency:
+          type: string
+        status:
+          type: string
+        description:
+          type: string
+        orderId:
+          type: string
+          format: uuid
+        createdAt:
+          type: string
+          format: date-time
+
+    TransactionListResponse:
+      type: object
+      properties:
+        data:
+          type: array
+          items:
+            $ref: '#/components/schemas/Transaction'
+        pagination:
+          $ref: '#/components/schemas/Pagination'
+
+    WebhookPayload:
+      type: object
+      description: Provider-specific raw event payload
+      additionalProperties: true
+      properties:
+        event:
+          type: string
+        payload:
+          type: object
+          additionalProperties: true
+
+    PaymentStats:
+      type: object
+      properties:
+        totalRevenue:
+          type: number
+        totalRefunds:
+          type: number
+        netRevenue:
+          type: number
+        transactionCount:
+          type: integer
+        successRate:
+          type: number
+          format: float
+          description: Percentage of successful payments
+        series:
+          type: array
+          items:
+            type: object
+            properties:
+              period:
+                type: string
+              revenue:
+                type: number
+              refunds:
+                type: number
+              count:
+                type: integer
+
+    Pagination:
+      type: object
+      properties:
+        total:
+          type: integer
+        page:
+          type: integer
+        limit:
+          type: integer
+        totalPages:
+          type: integer
+        hasNext:
+          type: boolean
+        hasPrev:
+          type: boolean
+
+    ErrorResponse:
+      type: object
+      properties:
+        error:
+          type: string
+        message:
+          type: string
+        details:
+          type: array
+          items:
+            type: object
+
+  responses:
+    Unauthorized:
+      description: Missing or invalid authentication
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+    Forbidden:
+      description: Insufficient permissions
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+    NotFound:
+      description: Resource not found
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+    ValidationError:
+      description: Validation failed
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'

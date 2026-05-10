@@ -1,0 +1,667 @@
+openapi: 3.1.0
+info:
+  title: Circuit Cart - User Service
+  description: |
+    Handles user registration, authentication, profile management,
+    address book, and session/token lifecycle for Circuit Cart.
+  version: 1.0.0
+  contact:
+    name: Circuit Cart Dev Team
+    email: your.email@example.com
+
+servers:
+  - url: https://api.circuitcart.com/api/v1
+    description: Production
+  - url: http://localhost:3001/api/v1
+    description: Local User Service
+
+tags:
+  - name: auth
+    description: Registration, login, logout, token refresh
+  - name: profile
+    description: User profile CRUD
+  - name: addresses
+    description: Saved address management
+  - name: sessions
+    description: Active session listing & revocation
+
+paths:
+  # ─── AUTH ───────────────────────────────────────────────
+  /auth/register:
+    post:
+      tags: [auth]
+      operationId: registerUser
+      summary: Register a new user account
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RegisterRequest'
+            example:
+              email: vicky@example.com
+              password: "Str0ng!Pass"
+              fullName: Vicky Tricky
+      responses:
+        '201':
+          description: User created successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AuthResponse'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '422':
+          $ref: '#/components/responses/ValidationError'
+
+  /auth/login:
+    post:
+      tags: [auth]
+      operationId: loginUser
+      summary: Authenticate and obtain JWT tokens
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/LoginRequest'
+      responses:
+        '200':
+          description: Login successful
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AuthResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+
+  /auth/logout:
+    post:
+      tags: [auth]
+      operationId: logoutUser
+      summary: Invalidate the current refresh token
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [refreshToken]
+              properties:
+                refreshToken:
+                  type: string
+      responses:
+        '204':
+          description: Logged out successfully
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /auth/refresh:
+    post:
+      tags: [auth]
+      operationId: refreshTokens
+      summary: Exchange a refresh token for a new access token
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [refreshToken]
+              properties:
+                refreshToken:
+                  type: string
+      responses:
+        '200':
+          description: New tokens issued
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TokenPair'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /auth/forgot-password:
+    post:
+      tags: [auth]
+      operationId: forgotPassword
+      summary: Request a password-reset email
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [email]
+              properties:
+                email:
+                  type: string
+                  format: email
+      responses:
+        '202':
+          description: Reset email dispatched (response is identical whether email exists or not)
+
+  /auth/reset-password:
+    post:
+      tags: [auth]
+      operationId: resetPassword
+      summary: Complete password reset using a token from email
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [token, newPassword]
+              properties:
+                token:
+                  type: string
+                newPassword:
+                  type: string
+                  minLength: 8
+      responses:
+        '200':
+          description: Password updated
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '410':
+          description: Token expired or already used
+
+  /auth/verify-email:
+    get:
+      tags: [auth]
+      operationId: verifyEmail
+      summary: Confirm email address via token from verification email
+      parameters:
+        - name: token
+          in: query
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Email verified
+        '410':
+          description: Token expired or already used
+
+  # ─── PROFILE ────────────────────────────────────────────
+  /users/profile:
+    get:
+      tags: [profile]
+      operationId: getProfile
+      summary: Retrieve the authenticated user's profile
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: User profile
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UserProfile'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+    put:
+      tags: [profile]
+      operationId: updateProfile
+      summary: Update profile fields (fullName, phone, avatar)
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateProfileRequest'
+      responses:
+        '200':
+          description: Updated profile
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UserProfile'
+        '422':
+          $ref: '#/components/responses/ValidationError'
+
+  /users/profile/avatar:
+    post:
+      tags: [profile]
+      operationId: uploadAvatar
+      summary: Upload a new profile avatar image (multipart)
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              properties:
+                avatar:
+                  type: string
+                  format: binary
+      responses:
+        '200':
+          description: Avatar URL
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  avatarUrl:
+                    type: string
+                    format: uri
+        '413':
+          description: File too large (max 5 MB)
+
+  /users/password:
+    put:
+      tags: [profile]
+      operationId: changePassword
+      summary: Change password (requires current password)
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [currentPassword, newPassword]
+              properties:
+                currentPassword:
+                  type: string
+                newPassword:
+                  type: string
+                  minLength: 8
+      responses:
+        '200':
+          description: Password changed; all other sessions revoked
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '422':
+          $ref: '#/components/responses/ValidationError'
+
+  # ─── ADDRESSES ──────────────────────────────────────────
+  /users/addresses:
+    get:
+      tags: [addresses]
+      operationId: listAddresses
+      summary: List all saved addresses
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Address list
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Address'
+
+    post:
+      tags: [addresses]
+      operationId: addAddress
+      summary: Add a new address to the address book
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AddressRequest'
+      responses:
+        '201':
+          description: Address created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Address'
+        '422':
+          $ref: '#/components/responses/ValidationError'
+
+  /users/addresses/{addressId}:
+    parameters:
+      - $ref: '#/components/parameters/AddressId'
+
+    get:
+      tags: [addresses]
+      operationId: getAddress
+      summary: Get a specific address
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Address details
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Address'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+    put:
+      tags: [addresses]
+      operationId: updateAddress
+      summary: Replace an existing address
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AddressRequest'
+      responses:
+        '200':
+          description: Updated address
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Address'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+    delete:
+      tags: [addresses]
+      operationId: deleteAddress
+      summary: Remove an address
+      security:
+        - bearerAuth: []
+      responses:
+        '204':
+          description: Address removed
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /users/addresses/{addressId}/default:
+    parameters:
+      - $ref: '#/components/parameters/AddressId'
+    patch:
+      tags: [addresses]
+      operationId: setDefaultAddress
+      summary: Mark an address as the default shipping address
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Default address updated
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  # ─── SESSIONS ───────────────────────────────────────────
+  /users/sessions:
+    get:
+      tags: [sessions]
+      operationId: listSessions
+      summary: List active sessions (device, IP, last seen)
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Session list
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Session'
+
+  /users/sessions/{sessionId}:
+    delete:
+      tags: [sessions]
+      operationId: revokeSession
+      summary: Revoke a specific session (remote logout)
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: sessionId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '204':
+          description: Session revoked
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+
+  parameters:
+    AddressId:
+      name: addressId
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+
+  schemas:
+    RegisterRequest:
+      type: object
+      required: [email, password, fullName]
+      properties:
+        email:
+          type: string
+          format: email
+          maxLength: 255
+        password:
+          type: string
+          minLength: 8
+          maxLength: 128
+        fullName:
+          type: string
+          minLength: 2
+          maxLength: 100
+
+    LoginRequest:
+      type: object
+      required: [email, password]
+      properties:
+        email:
+          type: string
+          format: email
+        password:
+          type: string
+
+    TokenPair:
+      type: object
+      properties:
+        accessToken:
+          type: string
+          description: Short-lived JWT (15 min)
+        refreshToken:
+          type: string
+          description: Long-lived opaque token (30 days)
+        expiresIn:
+          type: integer
+          description: Access token TTL in seconds
+          example: 900
+
+    AuthResponse:
+      allOf:
+        - $ref: '#/components/schemas/TokenPair'
+        - type: object
+          properties:
+            user:
+              $ref: '#/components/schemas/UserProfile'
+
+    UserProfile:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+          readOnly: true
+        email:
+          type: string
+          format: email
+          readOnly: true
+        fullName:
+          type: string
+        phone:
+          type: string
+          nullable: true
+        avatarUrl:
+          type: string
+          format: uri
+          nullable: true
+        emailVerified:
+          type: boolean
+          readOnly: true
+        createdAt:
+          type: string
+          format: date-time
+          readOnly: true
+        updatedAt:
+          type: string
+          format: date-time
+          readOnly: true
+
+    UpdateProfileRequest:
+      type: object
+      minProperties: 1
+      properties:
+        fullName:
+          type: string
+          minLength: 2
+          maxLength: 100
+        phone:
+          type: string
+          pattern: '^\+?[1-9]\d{6,14}$'
+
+    Address:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+          readOnly: true
+        label:
+          type: string
+          example: Home
+        street:
+          type: string
+        city:
+          type: string
+        state:
+          type: string
+        zip:
+          type: string
+        country:
+          type: string
+          default: IN
+        isDefault:
+          type: boolean
+
+    AddressRequest:
+      type: object
+      required: [street, city, zip]
+      properties:
+        label:
+          type: string
+          maxLength: 50
+        street:
+          type: string
+          maxLength: 255
+        city:
+          type: string
+          maxLength: 100
+        state:
+          type: string
+          maxLength: 100
+        zip:
+          type: string
+          maxLength: 20
+        country:
+          type: string
+          maxLength: 2
+          default: IN
+
+    Session:
+      type: object
+      properties:
+        id:
+          type: string
+        device:
+          type: string
+          example: Chrome on Windows
+        ipAddress:
+          type: string
+        lastSeenAt:
+          type: string
+          format: date-time
+        isCurrent:
+          type: boolean
+
+    ErrorResponse:
+      type: object
+      properties:
+        error:
+          type: string
+        message:
+          type: string
+        details:
+          type: array
+          items:
+            type: object
+            properties:
+              field:
+                type: string
+              issue:
+                type: string
+
+  responses:
+    BadRequest:
+      description: Invalid request payload
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+    Unauthorized:
+      description: Missing or invalid authentication
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+    NotFound:
+      description: Resource not found
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+    Conflict:
+      description: Resource already exists
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+    ValidationError:
+      description: Validation failed
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+    TooManyRequests:
+      description: Rate limit exceeded
+      headers:
+        Retry-After:
+          schema:
+            type: integer
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'

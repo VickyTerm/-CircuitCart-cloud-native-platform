@@ -1,0 +1,648 @@
+openapi: 3.1.0
+info:
+  title: Circuit Cart - API Gateway
+  description: |
+    Central entry point for the Circuit Cart platform.
+
+    ## Architecture
+    The API Gateway sits in front of all microservices and is responsible for:
+    - **Authentication & Authorization** — JWT validation, role enforcement
+    - **Rate limiting** — per-IP and per-user sliding window limits
+    - **Request routing** — proxies to downstream services
+    - **Aggregation** — selected endpoints aggregate multiple service calls
+    - **Health & observability** — unified health checks, metrics endpoint
+
+    ## Downstream Services
+
+    | Service             | Internal URL                   |
+    |---------------------|-------------------------------|
+    | User Service        | http://user-service:3001       |
+    | Product Service     | http://product-service:3002    |
+    | Order Service       | http://order-service:3003      |
+    | Payment Service     | http://payment-service:3004    |
+    | Notification Service| http://notification-service:3005 |
+
+    ## Rate Limits (default)
+    | Scope         | Limit         |
+    |---------------|---------------|
+    | Anonymous     | 60 req / min  |
+    | Authenticated | 300 req / min |
+    | Auth endpoints| 10 req / min  |
+    | Webhooks      | 500 req / min |
+
+  version: 1.0.0
+  contact:
+    name: Circuit Cart Dev Team
+    email: your.email@example.com
+
+servers:
+  - url: https://api.circuitcart.com
+    description: Production Gateway
+  - url: https://staging.api.circuitcart.com
+    description: Staging Gateway
+  - url: http://localhost:8080
+    description: Local Gateway (docker-compose)
+
+tags:
+  - name: gateway
+    description: Gateway-level meta endpoints (health, metrics, config)
+  - name: aggregated
+    description: Aggregated endpoints that fan-out to multiple services
+  - name: proxy
+    description: Direct proxy routes to individual services
+
+paths:
+  # ─── HEALTH & OBSERVABILITY ─────────────────────────────
+  /health:
+    get:
+      tags: [gateway]
+      operationId: healthCheck
+      summary: Shallow gateway health check (liveness probe)
+      responses:
+        '200':
+          description: Gateway is alive
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    example: ok
+                  timestamp:
+                    type: string
+                    format: date-time
+                  version:
+                    type: string
+
+  /health/deep:
+    get:
+      tags: [gateway]
+      operationId: deepHealthCheck
+      summary: Deep health check — polls all downstream services (readiness probe)
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: All services healthy
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DeepHealthResponse'
+        '503':
+          description: One or more services degraded
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DeepHealthResponse'
+
+  /metrics:
+    get:
+      tags: [gateway]
+      operationId: getMetrics
+      summary: Prometheus-format metrics endpoint (scrape target)
+      description: |
+        Secured by `X-Metrics-Token` header or IP allowlist.
+        Not JWT-protected.
+      responses:
+        '200':
+          description: Prometheus metrics
+          content:
+            text/plain:
+              schema:
+                type: string
+
+  /api-docs:
+    get:
+      tags: [gateway]
+      operationId: getSwaggerUI
+      summary: Swagger UI (OpenAPI documentation)
+      responses:
+        '200':
+          description: HTML documentation page
+          content:
+            text/html:
+              schema:
+                type: string
+
+  /api-docs/openapi.json:
+    get:
+      tags: [gateway]
+      operationId: getOpenApiSpec
+      summary: Raw merged OpenAPI 3.1 specification (JSON)
+      responses:
+        '200':
+          description: OpenAPI spec
+          content:
+            application/json:
+              schema:
+                type: object
+
+  # ─── AGGREGATED ENDPOINTS ───────────────────────────────
+  /api/v1/me:
+    get:
+      tags: [aggregated]
+      operationId: getMe
+      summary: Aggregated "me" — profile + unread notification count + active cart summary
+      description: |
+        Fan-out call to User Service (profile), Notification Service
+        (unread count), and Order Service (cart item count). Returns
+        a single merged payload to reduce client round trips.
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Aggregated user context
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MeResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /api/v1/home:
+    get:
+      tags: [aggregated]
+      operationId: getHomeFeed
+      summary: Home feed — featured products, categories, and banners (public)
+      description: |
+        Calls Product Service for featured/new-arrivals, categories, and
+        promoted products. Cached at the gateway layer (TTL 60s).
+      parameters:
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            default: 12
+      responses:
+        '200':
+          description: Home page data
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HomeFeedResponse'
+
+  /api/v1/search:
+    get:
+      tags: [aggregated]
+      operationId: globalSearch
+      summary: Global search across products and categories
+      parameters:
+        - name: q
+          in: query
+          required: true
+          schema:
+            type: string
+            minLength: 1
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            default: 10
+            maximum: 50
+      responses:
+        '200':
+          description: Search results grouped by type
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SearchResponse'
+
+  /api/v1/dashboard:
+    get:
+      tags: [aggregated]
+      operationId: getAdminDashboard
+      summary: Admin dashboard aggregation — orders, revenue, users, inventory (admin only)
+      description: |
+        Fans out to Order Service (stats), Payment Service (revenue),
+        User Service (user counts), and Product Service (low-stock alerts).
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: from
+          in: query
+          schema:
+            type: string
+            format: date
+        - name: to
+          in: query
+          schema:
+            type: string
+            format: date
+      responses:
+        '200':
+          description: Dashboard metrics
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DashboardResponse'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+
+  # ─── RATE LIMIT INFO ────────────────────────────────────
+  /api/v1/rate-limit-status:
+    get:
+      tags: [gateway]
+      operationId: getRateLimitStatus
+      summary: Current rate limit consumption for the authenticated user
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Rate limit windows
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RateLimitStatus'
+
+  # ─── PROXY ROUTES (documented for discoverability) ──────
+  /api/v1/auth/{path}:
+    parameters:
+      - name: path
+        in: path
+        required: true
+        schema:
+          type: string
+    get:
+      tags: [proxy]
+      operationId: proxyAuthGet
+      summary: "→ Proxied to User Service: /api/v1/auth/{path}"
+      responses:
+        '200':
+          description: See user-service.yaml for full response schema
+    post:
+      tags: [proxy]
+      operationId: proxyAuthPost
+      summary: "→ Proxied to User Service: /api/v1/auth/{path}"
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+      responses:
+        '200':
+          description: See user-service.yaml for full response schema
+
+  /api/v1/products/{path}:
+    parameters:
+      - name: path
+        in: path
+        required: true
+        schema:
+          type: string
+    get:
+      tags: [proxy]
+      operationId: proxyProductsGet
+      summary: "→ Proxied to Product Service: /api/v1/products/{path}"
+      responses:
+        '200':
+          description: See product-service.yaml for full response schema
+    post:
+      tags: [proxy]
+      operationId: proxyProductsPost
+      summary: "→ Proxied to Product Service: /api/v1/products/{path}"
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+      responses:
+        '201':
+          description: See product-service.yaml for full response schema
+
+  /api/v1/orders/{path}:
+    parameters:
+      - name: path
+        in: path
+        required: true
+        schema:
+          type: string
+    get:
+      tags: [proxy]
+      operationId: proxyOrdersGet
+      summary: "→ Proxied to Order Service: /api/v1/orders/{path}"
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: See order-service.yaml for full response schema
+    post:
+      tags: [proxy]
+      operationId: proxyOrdersPost
+      summary: "→ Proxied to Order Service: /api/v1/orders/{path}"
+      security:
+        - bearerAuth: []
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+      responses:
+        '201':
+          description: See order-service.yaml for full response schema
+
+  /api/v1/payments/{path}:
+    parameters:
+      - name: path
+        in: path
+        required: true
+        schema:
+          type: string
+    get:
+      tags: [proxy]
+      operationId: proxyPaymentsGet
+      summary: "→ Proxied to Payment Service: /api/v1/payments/{path}"
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: See payment-service.yaml for full response schema
+    post:
+      tags: [proxy]
+      operationId: proxyPaymentsPost
+      summary: "→ Proxied to Payment Service: /api/v1/payments/{path}"
+      security:
+        - bearerAuth: []
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+      responses:
+        '200':
+          description: See payment-service.yaml for full response schema
+
+  /api/v1/notifications/{path}:
+    parameters:
+      - name: path
+        in: path
+        required: true
+        schema:
+          type: string
+    get:
+      tags: [proxy]
+      operationId: proxyNotificationsGet
+      summary: "→ Proxied to Notification Service: /api/v1/notifications/{path}"
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: See notification-service.yaml for full response schema
+    post:
+      tags: [proxy]
+      operationId: proxyNotificationsPost
+      summary: "→ Proxied to Notification Service: /api/v1/notifications/{path}"
+      security:
+        - bearerAuth: []
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+      responses:
+        '200':
+          description: See notification-service.yaml for full response schema
+
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: |
+        Pass `Authorization: Bearer <access_token>`.
+        Tokens are issued by the User Service /api/v1/auth/login endpoint.
+
+  schemas:
+    ServiceHealth:
+      type: object
+      properties:
+        name:
+          type: string
+        status:
+          type: string
+          enum: [healthy, degraded, unreachable]
+        latencyMs:
+          type: integer
+          nullable: true
+        checkedAt:
+          type: string
+          format: date-time
+
+    DeepHealthResponse:
+      type: object
+      properties:
+        gateway:
+          type: string
+          example: ok
+        services:
+          type: array
+          items:
+            $ref: '#/components/schemas/ServiceHealth'
+        overallStatus:
+          type: string
+          enum: [healthy, degraded, down]
+
+    MeResponse:
+      type: object
+      properties:
+        user:
+          type: object
+          description: UserProfile from User Service
+          additionalProperties: true
+        unreadNotifications:
+          type: integer
+        cartItemCount:
+          type: integer
+
+    HomeFeedResponse:
+      type: object
+      properties:
+        banners:
+          type: array
+          items:
+            type: object
+            properties:
+              id:
+                type: string
+              imageUrl:
+                type: string
+                format: uri
+              linkUrl:
+                type: string
+                format: uri
+              title:
+                type: string
+        featuredProducts:
+          type: array
+          items:
+            type: object
+            description: ProductSummary from Product Service
+            additionalProperties: true
+        newArrivals:
+          type: array
+          items:
+            type: object
+            additionalProperties: true
+        categories:
+          type: array
+          items:
+            type: object
+            additionalProperties: true
+
+    SearchResult:
+      type: object
+      properties:
+        type:
+          type: string
+          enum: [product, category]
+        id:
+          type: string
+        name:
+          type: string
+        slug:
+          type: string
+        imageUrl:
+          type: string
+          format: uri
+          nullable: true
+        price:
+          type: number
+          nullable: true
+
+    SearchResponse:
+      type: object
+      properties:
+        query:
+          type: string
+        total:
+          type: integer
+        products:
+          type: array
+          items:
+            $ref: '#/components/schemas/SearchResult'
+        categories:
+          type: array
+          items:
+            $ref: '#/components/schemas/SearchResult'
+
+    DashboardResponse:
+      type: object
+      properties:
+        orders:
+          type: object
+          properties:
+            total:
+              type: integer
+            pending:
+              type: integer
+            today:
+              type: integer
+        revenue:
+          type: object
+          properties:
+            total:
+              type: number
+            today:
+              type: number
+            refunded:
+              type: number
+        users:
+          type: object
+          properties:
+            total:
+              type: integer
+            newToday:
+              type: integer
+            activeThisMonth:
+              type: integer
+        inventory:
+          type: object
+          properties:
+            lowStockCount:
+              type: integer
+            outOfStockCount:
+              type: integer
+
+    RateLimitStatus:
+      type: object
+      properties:
+        limit:
+          type: integer
+        remaining:
+          type: integer
+        resetAt:
+          type: string
+          format: date-time
+        windows:
+          type: array
+          items:
+            type: object
+            properties:
+              name:
+                type: string
+              limit:
+                type: integer
+              remaining:
+                type: integer
+              resetAt:
+                type: string
+                format: date-time
+
+    ErrorResponse:
+      type: object
+      properties:
+        error:
+          type: string
+        message:
+          type: string
+        requestId:
+          type: string
+          description: Gateway-assigned trace/request ID for debugging
+        timestamp:
+          type: string
+          format: date-time
+
+  responses:
+    Unauthorized:
+      description: Missing or invalid JWT
+      headers:
+        WWW-Authenticate:
+          schema:
+            type: string
+            example: Bearer realm="circuitcart"
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+    Forbidden:
+      description: Insufficient role / permissions
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+    TooManyRequests:
+      description: Rate limit exceeded
+      headers:
+        X-RateLimit-Limit:
+          schema:
+            type: integer
+        X-RateLimit-Remaining:
+          schema:
+            type: integer
+        X-RateLimit-Reset:
+          schema:
+            type: integer
+        Retry-After:
+          schema:
+            type: integer
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+    ServiceUnavailable:
+      description: Gateway or downstream service unavailable
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'

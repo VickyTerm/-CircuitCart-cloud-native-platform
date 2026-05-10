@@ -1,39 +1,129 @@
 openapi: 3.1.0
 info:
-  title: Circuit Cart API
-  description: IoT E-commerce Platform API
+  title: Circuit Cart API — Master Index
+  description: |
+    # Circuit Cart IoT E-commerce Platform
+
+    This file is the **master index** for the Circuit Cart API.
+    All routes are served through the API Gateway at `https://api.circuitcart.com`.
+
+    ## Service Specs (in /docs/api/specs/)
+
+    | File | Service | Responsibility |
+    |------|---------|----------------|
+    | `specs/api-gateway.yaml` | **API Gateway** | Auth, rate-limiting, routing, aggregated endpoints |
+    | `specs/user-service.yaml` | **User Service** | Registration, login, profile, addresses, sessions |
+    | `specs/product-service.yaml` | **Product Service** | Catalog, categories, inventory, reviews |
+    | `specs/order-service.yaml` | **Order Service** | Cart, orders, cancellations, returns |
+    | `specs/payment-service.yaml` | **Payment Service** | Payment initiation, verification, refunds, webhooks |
+    | `specs/notification-service.yaml` | **Notification Service** | In-app inbox, push, email/SMS preferences, templates |
+
+    ## Quick-Start Flows
+
+    ### 1 — Register & Login
+    ```
+    POST /api/v1/auth/register   →  User Service
+    POST /api/v1/auth/login      →  User Service   (returns accessToken + refreshToken)
+    ```
+
+    ### 2 — Browse & Search
+    ```
+    GET /api/v1/home             →  Gateway (aggregated, cached 60s)
+    GET /api/v1/products?q=...   →  Product Service
+    GET /api/v1/products/{id}    →  Product Service
+    ```
+
+    ### 3 — Cart → Order → Pay
+    ```
+    POST   /api/v1/cart/items          →  Order Service
+    GET    /api/v1/cart/checkout-summary →  Order Service
+    POST   /api/v1/orders              →  Order Service
+    POST   /api/v1/payments/initiate   →  Payment Service
+    POST   /api/v1/payments/verify     →  Payment Service
+    ```
+
+    ### 4 — Track & Return
+    ```
+    GET  /api/v1/orders/{id}/tracking  →  Order Service
+    POST /api/v1/orders/{id}/returns   →  Order Service
+    GET  /api/v1/refunds/{id}          →  Payment Service
+    ```
+
+    ## Authentication
+    All protected endpoints require:
+    ```
+    Authorization: Bearer <accessToken>
+    ```
+    Access tokens expire in **15 minutes**. Use `POST /api/v1/auth/refresh`
+    with the refresh token (30-day TTL) to obtain a new pair.
+
+    ## Rate Limits
+    | Client Type | Limit |
+    |-------------|-------|
+    | Anonymous | 60 req / min |
+    | Authenticated | 300 req / min |
+    | Auth endpoints | 10 req / min |
+
+    Exceeded limits return `429 Too Many Requests` with a `Retry-After` header.
+
+    ## Versioning
+    All routes are under `/api/v1/`. Breaking changes will be introduced
+    under `/api/v2/` with a deprecation notice period of ≥ 6 months.
+
+    ## Error Format
+    All services return errors in a consistent envelope:
+    ```json
+    {
+      "error": "RESOURCE_NOT_FOUND",
+      "message": "Product with id abc-123 not found",
+      "details": [
+        { "field": "id", "issue": "does not exist" }
+      ]
+    }
+    ```
+
   version: 1.0.0
   contact:
     name: Circuit Cart Dev Team
     email: your.email@example.com
+  license:
+    name: Proprietary
 
 servers:
   - url: https://api.circuitcart.com
-    description: Production Server
-  - url: http://localhost:3000
-    description: Local Development
+    description: Production (API Gateway)
+  - url: https://staging.api.circuitcart.com
+    description: Staging
+  - url: http://localhost:8080
+    description: Local (docker-compose gateway)
 
 tags:
   - name: auth
-    description: Authentication & User Management
+    description: Authentication & user management
   - name: products
-    description: Product Catalog & Inventory
-  - name: orders
-    description: Cart and Order Operations
-  - name: payments
-    description: Payment Processing
+    description: Product catalog & inventory
   - name: cart
-    description: Cart Operations
+    description: Shopping cart
+  - name: orders
+    description: Order lifecycle
+  - name: payments
+    description: Payment processing & refunds
+  - name: notifications
+    description: In-app & push notifications
   - name: users
-    description: User Profile & Addresses
+    description: User profile & addresses
+  - name: admin
+    description: Admin-only operations
 
+# ─── SUMMARY PATHS (canonical references only) ─────────────
+# Full schemas and request/response bodies are defined in the
+# individual service spec files under specs/.
 paths:
-  # ==================== AUTH ====================
   /api/v1/auth/register:
     post:
-      tags:
-        - auth
+      tags: [auth]
       summary: Register new user
+      description: "→ Handled by User Service. See specs/user-service.yaml"
       requestBody:
         required: true
         content:
@@ -42,15 +132,15 @@ paths:
               $ref: '#/components/schemas/RegisterRequest'
       responses:
         '201':
-          description: User created successfully
+          description: User created. Returns JWT tokens + profile.
         '409':
-          description: Email already exists
+          description: Email already registered.
 
   /api/v1/auth/login:
     post:
-      tags:
-        - auth
-      summary: Login user
+      tags: [auth]
+      summary: Login and obtain JWT tokens
+      description: "→ Handled by User Service. See specs/user-service.yaml"
       requestBody:
         required: true
         content:
@@ -59,15 +149,39 @@ paths:
               $ref: '#/components/schemas/LoginRequest'
       responses:
         '200':
-          description: Login successful
+          description: Login successful. Returns accessToken + refreshToken.
+        '401':
+          description: Invalid credentials.
 
-  # ==================== PRODUCTS ====================
+  /api/v1/auth/refresh:
+    post:
+      tags: [auth]
+      summary: Refresh access token
+      description: "→ Handled by User Service. See specs/user-service.yaml"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [refreshToken]
+              properties:
+                refreshToken:
+                  type: string
+      responses:
+        '200':
+          description: New accessToken issued.
+
   /api/v1/products:
     get:
-      tags:
-        - products
-      summary: Get all products with filtering
+      tags: [products]
+      summary: List / search products
+      description: "→ Handled by Product Service. See specs/product-service.yaml"
       parameters:
+        - name: q
+          in: query
+          schema:
+            type: string
         - name: category
           in: query
           schema:
@@ -76,19 +190,36 @@ paths:
           in: query
           schema:
             type: number
-        - name: search
+        - name: maxPrice
+          in: query
+          schema:
+            type: number
+        - name: inStock
+          in: query
+          schema:
+            type: boolean
+        - name: sortBy
           in: query
           schema:
             type: string
+            enum: [price_asc, price_desc, newest, rating, popularity]
+        - name: page
+          in: query
+          schema:
+            type: integer
+        - name: limit
+          in: query
+          schema:
+            type: integer
       responses:
         '200':
-          description: List of products
+          description: Paginated product list.
 
   /api/v1/products/{id}:
     get:
-      tags:
-        - products
+      tags: [products]
       summary: Get product by ID
+      description: "→ Handled by Product Service. See specs/product-service.yaml"
       parameters:
         - name: id
           in: path
@@ -97,23 +228,28 @@ paths:
             type: string
       responses:
         '200':
-          description: Product details
+          description: Full product details.
+        '404':
+          description: Product not found.
 
-  # ==================== CART ====================
   /api/v1/cart:
     get:
-      tags:
-        - cart
-      summary: Get current user's cart
+      tags: [cart]
+      summary: Get current cart
+      description: "→ Handled by Order Service. See specs/order-service.yaml"
+      security:
+        - bearerAuth: []
       responses:
         '200':
-          description: Cart details
+          description: Cart with line items and totals.
 
   /api/v1/cart/items:
     post:
-      tags:
-        - cart
+      tags: [cart]
       summary: Add item to cart
+      description: "→ Handled by Order Service. See specs/order-service.yaml"
+      security:
+        - bearerAuth: []
       requestBody:
         required: true
         content:
@@ -121,28 +257,25 @@ paths:
             schema:
               $ref: '#/components/schemas/CartItemRequest'
       responses:
-        '201':
-          description: Item added to cart
-    delete:
-      tags:
-        - cart
-      summary: Remove item from cart
-      parameters:
-        - name: productId
-          in: query
-          required: true
-          schema:
-            type: string
+        '200':
+          description: Updated cart.
+
+  /api/v1/orders:
+    get:
+      tags: [orders]
+      summary: List orders
+      description: "→ Handled by Order Service. See specs/order-service.yaml"
+      security:
+        - bearerAuth: []
       responses:
         '200':
-          description: Item removed
-
-  # ==================== ORDERS ====================
-  /api/v1/orders:
+          description: Paginated order history.
     post:
-      tags:
-        - orders
-      summary: Create new order
+      tags: [orders]
+      summary: Place a new order
+      description: "→ Handled by Order Service. See specs/order-service.yaml"
+      security:
+        - bearerAuth: []
       requestBody:
         required: true
         content:
@@ -151,13 +284,15 @@ paths:
               $ref: '#/components/schemas/OrderRequest'
       responses:
         '201':
-          description: Order created successfully
+          description: Order created (pending payment).
 
   /api/v1/orders/{id}:
     get:
-      tags:
-        - orders
-      summary: Get order status
+      tags: [orders]
+      summary: Get order status and details
+      description: "→ Handled by Order Service. See specs/order-service.yaml"
+      security:
+        - bearerAuth: []
       parameters:
         - name: id
           in: path
@@ -166,21 +301,75 @@ paths:
             type: string
       responses:
         '200':
-          description: Order status details
+          description: Full order details.
+        '404':
+          description: Order not found.
 
-  # ==================== USER PROFILE ====================
-  /api/v1/users/profile:
-    get:
-      tags:
-        - users
-      summary: Get user profile
+  /api/v1/payments/initiate:
+    post:
+      tags: [payments]
+      summary: Initiate payment for an order
+      description: "→ Handled by Payment Service. See specs/payment-service.yaml"
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [orderId, method]
+              properties:
+                orderId:
+                  type: string
+                method:
+                  type: string
+                  enum: [card, upi, netbanking, wallet, cod]
       responses:
         '200':
-          description: User profile details
+          description: Payment session with provider client token.
+
+  /api/v1/payments/verify:
+    post:
+      tags: [payments]
+      summary: Verify completed payment
+      description: "→ Handled by Payment Service. See specs/payment-service.yaml"
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [paymentId, providerPaymentId, providerSignature]
+              properties:
+                paymentId:
+                  type: string
+                providerPaymentId:
+                  type: string
+                providerSignature:
+                  type: string
+      responses:
+        '200':
+          description: Payment verified; order confirmed.
+
+  /api/v1/users/profile:
+    get:
+      tags: [users]
+      summary: Get user profile
+      description: "→ Handled by User Service. See specs/user-service.yaml"
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: User profile.
     put:
-      tags:
-        - users
+      tags: [users]
       summary: Update user profile
+      description: "→ Handled by User Service. See specs/user-service.yaml"
+      security:
+        - bearerAuth: []
       requestBody:
         required: true
         content:
@@ -189,13 +378,24 @@ paths:
               $ref: '#/components/schemas/UserProfileRequest'
       responses:
         '200':
-          description: Profile updated
+          description: Updated profile.
 
   /api/v1/users/addresses:
+    get:
+      tags: [users]
+      summary: List saved addresses
+      description: "→ Handled by User Service. See specs/user-service.yaml"
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Address list.
     post:
-      tags:
-        - users
+      tags: [users]
       summary: Add new address
+      description: "→ Handled by User Service. See specs/user-service.yaml"
+      security:
+        - bearerAuth: []
       requestBody:
         required: true
         content:
@@ -204,14 +404,26 @@ paths:
               $ref: '#/components/schemas/AddressRequest'
       responses:
         '201':
-          description: Address added
+          description: Address saved.
 
-  # ==================== REVIEWS ====================
+  /api/v1/notifications:
+    get:
+      tags: [notifications]
+      summary: Get notification inbox
+      description: "→ Handled by Notification Service. See specs/notification-service.yaml"
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Paginated notifications with unread count.
+
   /api/v1/products/{id}/reviews:
     post:
-      tags:
-        - products
-      summary: Submit product review
+      tags: [products]
+      summary: Submit a product review
+      description: "→ Handled by Product Service. See specs/product-service.yaml"
+      security:
+        - bearerAuth: []
       parameters:
         - name: id
           in: path
@@ -226,17 +438,29 @@ paths:
               $ref: '#/components/schemas/ReviewRequest'
       responses:
         '201':
-          description: Review submitted
+          description: Review submitted.
 
-# ==================== COMPONENTS ====================
+  /health:
+    get:
+      tags: [admin]
+      summary: Gateway health check
+      description: "→ Handled by API Gateway. See specs/api-gateway.yaml"
+      responses:
+        '200':
+          description: Gateway alive.
+
 components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: "Authorization: Bearer <accessToken>"
+
   schemas:
     RegisterRequest:
       type: object
-      required:
-        - email
-        - password
-        - fullName
+      required: [email, password, fullName]
       properties:
         email:
           type: string
@@ -249,9 +473,7 @@ components:
 
     LoginRequest:
       type: object
-      required:
-        - email
-        - password
+      required: [email, password]
       properties:
         email:
           type: string
@@ -259,52 +481,28 @@ components:
         password:
           type: string
 
-    Product:
-      type: object
-      properties:
-        id:
-          type: string
-        name:
-          type: string
-        slug:
-          type: string
-        price:
-          type: number
-        stock:
-          type: integer
-        category:
-          type: string
-        specs:
-          type: object
-          additionalProperties: true
-        images:
-          type: array
-          items:
-            type: string
-
     CartItemRequest:
       type: object
-      required:
-        - productId
-        - quantity
+      required: [productId, quantity]
       properties:
         productId:
           type: string
         quantity:
           type: integer
+          minimum: 1
 
     OrderRequest:
       type: object
-      required:
-        - items
-        - paymentMethod
+      required: [shippingAddressId, paymentMethod, shippingMethod]
       properties:
-        items:
-          type: array
-          items:
-            $ref: '#/components/schemas/CartItemRequest'
+        shippingAddressId:
+          type: string
         paymentMethod:
           type: string
+          enum: [card, upi, netbanking, cod, wallet]
+        shippingMethod:
+          type: string
+          enum: [standard, express, overnight]
 
     UserProfileRequest:
       type: object
@@ -316,23 +514,25 @@ components:
 
     AddressRequest:
       type: object
-      required:
-        - street
-        - city
-        - zip
+      required: [street, city, zip]
       properties:
+        label:
+          type: string
         street:
           type: string
         city:
           type: string
+        state:
+          type: string
         zip:
           type: string
+        country:
+          type: string
+          default: IN
 
     ReviewRequest:
       type: object
-      required:
-        - rating
-        - comment
+      required: [rating, comment]
       properties:
         rating:
           type: integer
@@ -340,3 +540,4 @@ components:
           maximum: 5
         comment:
           type: string
+          minLength: 10
