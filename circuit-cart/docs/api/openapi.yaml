@@ -1,0 +1,342 @@
+openapi: 3.1.0
+info:
+  title: Circuit Cart API
+  description: IoT E-commerce Platform API
+  version: 1.0.0
+  contact:
+    name: Circuit Cart Dev Team
+    email: your.email@example.com
+
+servers:
+  - url: https://api.circuitcart.com
+    description: Production Server
+  - url: http://localhost:3000
+    description: Local Development
+
+tags:
+  - name: auth
+    description: Authentication & User Management
+  - name: products
+    description: Product Catalog & Inventory
+  - name: orders
+    description: Cart and Order Operations
+  - name: payments
+    description: Payment Processing
+  - name: cart
+    description: Cart Operations
+  - name: users
+    description: User Profile & Addresses
+
+paths:
+  # ==================== AUTH ====================
+  /api/v1/auth/register:
+    post:
+      tags:
+        - auth
+      summary: Register new user
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RegisterRequest'
+      responses:
+        '201':
+          description: User created successfully
+        '409':
+          description: Email already exists
+
+  /api/v1/auth/login:
+    post:
+      tags:
+        - auth
+      summary: Login user
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/LoginRequest'
+      responses:
+        '200':
+          description: Login successful
+
+  # ==================== PRODUCTS ====================
+  /api/v1/products:
+    get:
+      tags:
+        - products
+      summary: Get all products with filtering
+      parameters:
+        - name: category
+          in: query
+          schema:
+            type: string
+        - name: minPrice
+          in: query
+          schema:
+            type: number
+        - name: search
+          in: query
+          schema:
+            type: string
+      responses:
+        '200':
+          description: List of products
+
+  /api/v1/products/{id}:
+    get:
+      tags:
+        - products
+      summary: Get product by ID
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Product details
+
+  # ==================== CART ====================
+  /api/v1/cart:
+    get:
+      tags:
+        - cart
+      summary: Get current user's cart
+      responses:
+        '200':
+          description: Cart details
+
+  /api/v1/cart/items:
+    post:
+      tags:
+        - cart
+      summary: Add item to cart
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CartItemRequest'
+      responses:
+        '201':
+          description: Item added to cart
+    delete:
+      tags:
+        - cart
+      summary: Remove item from cart
+      parameters:
+        - name: productId
+          in: query
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Item removed
+
+  # ==================== ORDERS ====================
+  /api/v1/orders:
+    post:
+      tags:
+        - orders
+      summary: Create new order
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/OrderRequest'
+      responses:
+        '201':
+          description: Order created successfully
+
+  /api/v1/orders/{id}:
+    get:
+      tags:
+        - orders
+      summary: Get order status
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Order status details
+
+  # ==================== USER PROFILE ====================
+  /api/v1/users/profile:
+    get:
+      tags:
+        - users
+      summary: Get user profile
+      responses:
+        '200':
+          description: User profile details
+    put:
+      tags:
+        - users
+      summary: Update user profile
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UserProfileRequest'
+      responses:
+        '200':
+          description: Profile updated
+
+  /api/v1/users/addresses:
+    post:
+      tags:
+        - users
+      summary: Add new address
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AddressRequest'
+      responses:
+        '201':
+          description: Address added
+
+  # ==================== REVIEWS ====================
+  /api/v1/products/{id}/reviews:
+    post:
+      tags:
+        - products
+      summary: Submit product review
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ReviewRequest'
+      responses:
+        '201':
+          description: Review submitted
+
+# ==================== COMPONENTS ====================
+components:
+  schemas:
+    RegisterRequest:
+      type: object
+      required:
+        - email
+        - password
+        - fullName
+      properties:
+        email:
+          type: string
+          format: email
+        password:
+          type: string
+          minLength: 8
+        fullName:
+          type: string
+
+    LoginRequest:
+      type: object
+      required:
+        - email
+        - password
+      properties:
+        email:
+          type: string
+          format: email
+        password:
+          type: string
+
+    Product:
+      type: object
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+        slug:
+          type: string
+        price:
+          type: number
+        stock:
+          type: integer
+        category:
+          type: string
+        specs:
+          type: object
+          additionalProperties: true
+        images:
+          type: array
+          items:
+            type: string
+
+    CartItemRequest:
+      type: object
+      required:
+        - productId
+        - quantity
+      properties:
+        productId:
+          type: string
+        quantity:
+          type: integer
+
+    OrderRequest:
+      type: object
+      required:
+        - items
+        - paymentMethod
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/CartItemRequest'
+        paymentMethod:
+          type: string
+
+    UserProfileRequest:
+      type: object
+      properties:
+        fullName:
+          type: string
+        phone:
+          type: string
+
+    AddressRequest:
+      type: object
+      required:
+        - street
+        - city
+        - zip
+      properties:
+        street:
+          type: string
+        city:
+          type: string
+        zip:
+          type: string
+
+    ReviewRequest:
+      type: object
+      required:
+        - rating
+        - comment
+      properties:
+        rating:
+          type: integer
+          minimum: 1
+          maximum: 5
+        comment:
+          type: string
