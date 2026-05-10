@@ -1,0 +1,20 @@
+# Contributing Guidelines
+
+## Branching
+- Use `develop` as the integration branch.
+- Create branches as:
+  - `feature/*` for new features
+  - `bugfix/*` for fixes
+  - `chore/*` for maintenance
+
+## Commits
+- Follow convention: `type(scope): message`
+  - Example: `feat(frontend): add login page`
+
+## Pull Requests
+- Target `develop`, not `main`.
+- Require at least one review before merge.
+
+## Issues
+- Use GitHub Issues with milestones (Phase 1, Phase 2).
+- Link PRs to issues.
