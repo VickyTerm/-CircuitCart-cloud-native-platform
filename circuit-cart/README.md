@@ -2,3 +2,4 @@
 ## Architecture Diagram 
 - [System Context Diagram](docs/architecture/context-diagram.md)
 - [Container Diagram](docs/architecture/circuit_cart_c4_context.svg)
+- [Architecture Diagram](docs/architecture/circuit_cart_architecture.svg)
