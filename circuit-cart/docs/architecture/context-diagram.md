@@ -11,6 +11,9 @@
 # System Context Diagram - Circuit Cart
 
 ```mermaid
+# Context Diagram — Circuit Cart
+
+![Circuit Cart C4 Context Diagram](./circuit_cart_c4_context.svg)
 ```mermaid
 C4Context
     title System Context Diagram for Circuit Cart
