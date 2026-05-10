@@ -1,16 +1,26 @@
-# Circuit Cart API Contracts
+# CircuitCart API Documentation
 
 ## Overview
-This folder contains OpenAPI 3.1 specifications for each microservice.
+CircuitCart follows a **microservices architecture**. Each backend service owns its own OpenAPI specification (`openapi.yaml`) located inside its folder under `apps/backend/`.
 
-## Available Specs
+## Service Specs
+- `apps/backend/api-gateway/openapi.yaml` → Gateway entry point
+- `apps/backend/product-service/openapi.yaml` → Product catalog & IoT specs
+- `apps/backend/user-service/openapi.yaml` → Authentication & user profiles
+- `apps/backend/order-service/openapi.yaml` → Order creation & tracking
+- `apps/backend/payment-service/openapi.yaml` → Payment initiation & refunds
+- `apps/backend/notification-service/openapi.yaml` → Email, SMS, push notifications
 
-- [User Service](./specs/user-service.yaml)
-- [Product Service](./specs/product-service.yaml)
-- [Order Service](./specs/order-service.yaml)
-- [Payment Service](./specs/payment-service.yaml)
-- [Notification Service](./specs/notification-service.yaml)
-- [API Gateway](./specs/api-gateway.yaml)
+## Umbrella Spec
+- `apps/openapi.yaml` can be used as an **aggregated spec** that references all service specs.  
+- Useful for API consumers who want a single entry point in Swagger Editor.
 
-## How to View
-Paste any `.yaml` file into [Swagger Editor](https://editor.swagger.io/)
+## Documentation
+- High-level architecture diagrams are in `docs/architecture/`.  
+- This folder explains system design, context diagrams, and service interactions.
+
+## Validation
+To validate a service spec:
+1. Open [Swagger Editor](https://editor.swagger.io/).
+2. Paste the contents of the service’s `openapi.yaml`.
+3. Ensure no errors are reported.
