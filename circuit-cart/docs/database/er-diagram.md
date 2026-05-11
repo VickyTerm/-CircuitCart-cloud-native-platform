@@ -102,16 +102,16 @@ erDiagram
         timestamp   updated_at
     }
 
-    INVENTORY {
-        uuid        id              PK
-        uuid        product_id      FK  UK
-        int         available
-        int         reserved
-        int         reorder_threshold
-        varchar     warehouse_location
-        timestamp   last_restocked_at
-        timestamp   updated_at
-    }
+   INVENTORY {
+    uuid        id              PK
+    uuid        product_id      FK  "unique — one inventory per product"
+    int         available
+    int         reserved
+    int         reorder_threshold
+    varchar     warehouse_location
+    timestamp   last_restocked_at
+    timestamp   updated_at
+}
 
     INVENTORY_LOGS {
         uuid        id              PK
