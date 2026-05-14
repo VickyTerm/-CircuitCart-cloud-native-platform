@@ -1,0 +1,204 @@
+// apps/backend/product-service/prisma/schema.prisma
+// Prisma 6.19 — MongoDB (products_db)
+// MongoDB rules applied:
+//   - datasource block required here (prisma.config.ts datasource only works in Prisma 7)
+//   - onDelete: Restrict/Cascade not supported → use NoAction
+//   - no duplicate @@index for fields already covered by @unique or @unique on the model
+
+generator client {
+  provider = "prisma-client-js"
+  output   = "../generated/prisma"
+}
+
+datasource db {
+  provider = "mongodb"
+  url      = env("MONGODB_URL")
+}
+
+// ---------------------------------------------------------------------------
+// ENUMS
+// ---------------------------------------------------------------------------
+
+enum InventoryLogType {
+  restock
+  correction
+  reserve
+  release
+
+  @@map("inventory_log_type")
+}
+
+enum ReviewStatus {
+  pending
+  approved
+  rejected
+
+  @@map("review_status")
+}
+
+// ---------------------------------------------------------------------------
+// MODELS
+// ---------------------------------------------------------------------------
+
+/// Product category — supports infinite nesting via parent_id self-reference.
+model Category {
+  id          String    @id @default(auto()) @map("_id") @db.ObjectId
+  name        String
+  slug        String    @unique
+  description String?
+  imageUrl    String?   @map("image_url")
+  parentId    String?   @map("parent_id") @db.ObjectId
+  sortOrder   Int       @default(0) @map("sort_order")
+  isActive    Boolean   @default(true) @map("is_active")
+  createdAt   DateTime  @default(now()) @map("created_at")
+  updatedAt   DateTime  @updatedAt @map("updated_at")
+
+  // Relations
+  // NoAction: MongoDB does not support Restrict or Cascade referential actions.
+  // Referential integrity for categories is enforced at the service layer.
+  parent   Category?  @relation("CategoryTree", fields: [parentId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  children Category[] @relation("CategoryTree")
+  products Product[]
+
+  // slug is already indexed by @unique — no @@index needed
+  @@index([parentId])
+  @@index([isActive, sortOrder])
+  @@map("categories")
+}
+
+/// IoT product. `iotSpecs` holds a flexible JSON object (voltage, protocol,
+/// interface, etc.) — schema varies per product type, so Json is the right choice.
+model Product {
+  id              String   @id @default(auto()) @map("_id") @db.ObjectId
+  name            String
+  slug            String   @unique
+  description     String
+  sku             String   @unique
+  brand           String?
+  /// Price in INR stored as Float. Convert to paise (x100) at the API layer if
+  /// sub-rupee precision is needed.
+  price           Float
+  discountedPrice Float?   @map("discounted_price")
+  categoryId      String   @map("category_id") @db.ObjectId
+  /// Flexible IoT component specs: { voltage?, current?, protocol?, interface?,
+  /// operatingTemp?, dimensions?, weight?, pinCount?, ... }
+  iotSpecs        Json?    @map("iot_specs")
+  /// Embedded image array: [{ url, alt, isPrimary }]
+  images          Json[]
+  tags            String[]
+  isActive        Boolean  @default(true) @map("is_active")
+  createdAt       DateTime @default(now()) @map("created_at")
+  updatedAt       DateTime @updatedAt @map("updated_at")
+
+  // Relations
+  // NoAction: referential integrity enforced at the service layer.
+  category      Category       @relation(fields: [categoryId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  inventory     Inventory?
+  inventoryLogs InventoryLog[]
+  reviews       Review[]
+
+  // slug and sku are already indexed by @unique — no duplicate @@index needed
+  @@index([categoryId])
+  @@index([isActive])
+  @@index([isActive, price])
+  @@index([tags])
+  @@map("products")
+}
+
+/// One inventory record per product. `available` = physical stock minus reserved.
+/// `reserved` is incremented when a cart checkout begins, released if payment fails.
+model Inventory {
+  id                String    @id @default(auto()) @map("_id") @db.ObjectId
+  productId         String    @unique @map("product_id") @db.ObjectId
+  available         Int       @default(0)
+  reserved          Int       @default(0)
+  reorderThreshold  Int       @default(10) @map("reorder_threshold")
+  warehouseLocation String?   @map("warehouse_location")
+  lastRestockedAt   DateTime? @map("last_restocked_at")
+  updatedAt         DateTime  @updatedAt @map("updated_at")
+
+  // Relations
+  // NoAction: if a product is deleted, the service layer must delete inventory first.
+  product Product @relation(fields: [productId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+
+  // productId is already indexed by @unique — no duplicate @@index needed
+  @@index([available])
+  @@map("inventory")
+}
+
+/// Append-only audit log for every stock change.
+/// `actorId` is the UUID string from user-service (no FK — cross-service).
+model InventoryLog {
+  id            String           @id @default(auto()) @map("_id") @db.ObjectId
+  productId     String           @map("product_id") @db.ObjectId
+  /// UUID from user-service — stored as string (no cross-service FK).
+  actorId       String           @map("actor_id")
+  type          InventoryLogType
+  /// Positive = stock added; negative = stock removed.
+  quantityDelta Int              @map("quantity_delta")
+  /// Absolute stock level after this change.
+  stockAfter    Int              @map("stock_after")
+  reason        String?
+  createdAt     DateTime         @default(now()) @map("created_at")
+
+  // Relations
+  // NoAction: logs are append-only; deletion handled at service layer before product delete.
+  product Product @relation(fields: [productId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+
+  @@index([productId])
+  @@index([productId, createdAt])
+  @@index([actorId])
+  @@index([type])
+  @@map("inventory_logs")
+}
+
+/// Customer review for a product.
+/// `userId` and `userFullName` are snapshots from user-service — no live FK.
+model Review {
+  id               String       @id @default(auto()) @map("_id") @db.ObjectId
+  productId        String       @map("product_id") @db.ObjectId
+  /// UUID from user-service.
+  userId           String       @map("user_id")
+  /// Snapshot of user's display name at review time.
+  userFullName     String       @map("user_full_name")
+  /// 1–5 stars — enforced at the service layer.
+  rating           Int
+  comment          String
+  /// Array of image URLs uploaded with the review.
+  images           String[]
+  helpfulCount     Int          @default(0) @map("helpful_count")
+  verifiedPurchase Boolean      @default(false) @map("verified_purchase")
+  status           ReviewStatus @default(pending)
+  createdAt        DateTime     @default(now()) @map("created_at")
+  updatedAt        DateTime     @updatedAt @map("updated_at")
+
+  // Relations
+  // NoAction: reviews must be deleted at service layer before product delete.
+  product      Product             @relation(fields: [productId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  helpfulVotes ReviewHelpfulVote[]
+
+  @@index([productId])
+  @@index([productId, status])
+  @@index([userId])
+  @@index([productId, rating])
+  @@map("reviews")
+}
+
+/// Prevents a user from voting a review helpful more than once.
+/// Compound unique on (reviewId + userId) enforced by @@unique.
+model ReviewHelpfulVote {
+  id        String   @id @default(auto()) @map("_id") @db.ObjectId
+  reviewId  String   @map("review_id") @db.ObjectId
+  /// UUID from user-service.
+  userId    String   @map("user_id")
+  createdAt DateTime @default(now()) @map("created_at")
+
+  // Relations
+  // NoAction: helpful votes must be deleted at service layer before review delete.
+  review Review @relation(fields: [reviewId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+
+  @@unique([reviewId, userId])
+  @@index([reviewId])
+  @@index([userId])
+  @@map("review_helpful_votes")
+}
