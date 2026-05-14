@@ -1,0 +1,39 @@
+{
+  "name": "@circuit-cart/user-service",
+  "version": "1.0.0",
+  "description": "Circuit Cart — User Service (auth, profiles, addresses, sessions)",
+  "private": true,
+  "type": "module",
+  "main": "dist/index.js",
+  "scripts": {
+    "build": "tsc --project tsconfig.json",
+    "start": "node dist/index.js",
+    "dev": "tsx watch src/index.ts",
+    "prisma:generate": "prisma generate",
+    "prisma:migrate": "prisma migrate dev",
+    "prisma:deploy": "prisma migrate deploy",
+    "prisma:studio": "prisma studio",
+    "prisma:push": "prisma db push",
+    "lint": "eslint src --ext .ts",
+    "test": "vitest run",
+    "test:watch": "vitest"
+  },
+  "dependencies": {
+    "@prisma/adapter-pg": "^7.8.0",
+    "@prisma/client": "^7.8.0",
+    "@prisma/config": "^7.8.0",
+    "dotenv": "^17.4.2",
+    "pg": "^8.13.3"
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "@types/pg": "^8.11.10",
+    "prisma": "^7.8.0",
+    "tsx": "^4.19.3",
+    "typescript": "^5.8.3",
+    "vitest": "^3.1.4"
+  },
+  "engines": {
+    "node": ">=20.0.0"
+  }
+}

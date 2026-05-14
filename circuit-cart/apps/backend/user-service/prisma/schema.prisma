@@ -1,0 +1,254 @@
+// =============================================================================
+// Circuit Cart — User Service
+// File   : apps/backend/user-service/prisma/schema.prisma
+// DB     : PostgreSQL  (users_db)
+// ORM    : Prisma 5.x
+//
+// Covers all models required by user-service.yaml:
+//   • User              — core identity & profile
+//   • Address           — saved address book  (/users/addresses)
+//   • RefreshToken      — JWT refresh-token store (/auth/refresh, /auth/logout)
+//   • Session           — active device sessions (/users/sessions)
+//   • PasswordResetToken — forgot-password flow (/auth/forgot-password)
+//   • EmailVerifyToken  — email verification (/auth/verify-email)
+//
+// Run:
+//   cd apps/backend/user-service
+//   npx prisma generate
+//   npx prisma migrate dev --name init        # development
+//   npx prisma migrate deploy                 # CI / production
+// =============================================================================
+
+generator client {
+  provider        = "prisma-client-js"
+  // Keeps the generated client inside the service so each microservice
+  // has its own isolated Prisma client — critical in a monorepo.
+  output          = "../generated/prisma"
+  previewFeatures = ["relationJoins"]  // enables performant JOIN queries in Prisma 5
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// ENUMS
+// ─────────────────────────────────────────────────────────────────────────────
+
+/// Role assigned to a user account.
+/// customer — default for self-registered users
+/// admin    — full back-office access
+/// vendor   — future multi-vendor extension point
+enum UserRole {
+  CUSTOMER
+  ADMIN
+  VENDOR
+}
+
+/// Current lifecycle state of a user account.
+enum AccountStatus {
+  ACTIVE
+  SUSPENDED   // admin-initiated; login blocked
+  DEACTIVATED // user-initiated soft delete
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// USER  (core identity + profile)
+// Maps to: POST /auth/register, GET|PUT /users/profile
+// ─────────────────────────────────────────────────────────────────────────────
+model User {
+  id            String        @id @default(uuid()) @db.Uuid
+  email         String        @unique @db.VarChar(255)
+  passwordHash  String        @db.VarChar(255)   // bcrypt / argon2id hash — never plaintext
+
+  // Profile fields (PUT /users/profile)
+  fullName      String        @db.VarChar(100)
+  phone         String?       @db.VarChar(20)
+  avatarUrl     String?       @db.VarChar(2048)
+
+  // Auth state
+  role          UserRole      @default(CUSTOMER)
+  status        AccountStatus @default(ACTIVE)
+  emailVerified Boolean       @default(false)
+  lastLoginAt   DateTime?
+
+  // Audit
+  createdAt     DateTime      @default(now())
+  updatedAt     DateTime      @updatedAt
+
+  // Relations
+  addresses            Address[]
+  refreshTokens        RefreshToken[]
+  sessions             Session[]
+  passwordResetTokens  PasswordResetToken[]
+  emailVerifyTokens    EmailVerifyToken[]
+
+  @@index([email])                    // fast lookup on login
+  @@index([status])                   // admin filtering by account status
+  @@index([createdAt])                // dashboard "new users" queries
+  @@map("users")
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// ADDRESS  (address book)
+// Maps to: GET|POST /users/addresses
+//          GET|PUT|DELETE /users/addresses/{addressId}
+//          PATCH /users/addresses/{addressId}/default
+// ─────────────────────────────────────────────────────────────────────────────
+model Address {
+  id        String   @id @default(uuid()) @db.Uuid
+  userId    String   @db.Uuid
+
+  // Display label (e.g. "Home", "Work")
+  label     String?  @db.VarChar(50)
+
+  // Address fields (all required at API level via validation middleware)
+  street    String   @db.VarChar(255)
+  city      String   @db.VarChar(100)
+  state     String?  @db.VarChar(100)
+  zip       String   @db.VarChar(20)
+  country   String   @default("IN") @db.VarChar(2)   // ISO 3166-1 alpha-2
+
+  // Only one address per user may be the default.
+  // Enforced at service layer: when this is set true, all others are set false.
+  isDefault Boolean  @default(false)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Relations
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])                   // list addresses for a user — O(1)
+  @@index([userId, isDefault])        // fast "get default address" lookup
+  @@map("addresses")
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// REFRESH TOKEN
+// Maps to: POST /auth/refresh, POST /auth/logout
+//
+// Design notes:
+//   • The raw token is NEVER stored — only a SHA-256 hash (tokenHash).
+//   • Revocation is done by setting isRevoked = true; expired rows are purged
+//     by a nightly job (WHERE expiresAt < NOW() AND isRevoked = true).
+//   • A user may have up to N active tokens (one per device/browser).
+// ─────────────────────────────────────────────────────────────────────────────
+model RefreshToken {
+  id          String   @id @default(uuid()) @db.Uuid
+  userId      String   @db.Uuid
+
+  // SHA-256(rawToken) — prevents token theft from DB dumps
+  tokenHash   String   @unique @db.VarChar(64)
+
+  // Source metadata (surfaced in GET /users/sessions)
+  deviceName  String?  @db.VarChar(200)
+  ipAddress   String?  @db.VarChar(45)     // supports IPv6
+  userAgent   String?  @db.VarChar(500)
+
+  isRevoked   Boolean  @default(false)
+  expiresAt   DateTime                      // set to now() + 30 days on creation
+  createdAt   DateTime @default(now())
+  lastUsedAt  DateTime @default(now())      // updated on every successful refresh
+
+  // Relations
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])                         // list tokens per user for revoke-all
+  @@index([tokenHash])                      // fast lookup on refresh request
+  @@index([expiresAt, isRevoked])           // cleanup job filter
+  @@map("refresh_tokens")
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// SESSION  (active device listing — shown in GET /users/sessions)
+//
+// Design notes:
+//   • One Session row per RefreshToken (tied to a device).
+//   • Deleting a Session via DELETE /users/sessions/{id} also revokes the
+//     linked RefreshToken — enforced at service layer.
+//   • isCurrent is computed at query time (not stored), based on the
+//     sessionId embedded in the current access token's JWT claims.
+// ─────────────────────────────────────────────────────────────────────────────
+model Session {
+  id             String        @id @default(uuid()) @db.Uuid
+  userId         String        @db.Uuid
+
+  // Denormalised from RefreshToken for fast session-list rendering
+  deviceName     String?       @db.VarChar(200)
+  ipAddress      String?       @db.VarChar(45)
+  userAgent      String?       @db.VarChar(500)
+
+  // Links back to the token so revoking a session revokes its token
+  refreshTokenId String        @unique @db.Uuid
+
+  lastSeenAt     DateTime      @default(now())
+  createdAt      DateTime      @default(now())
+
+  // Relations
+  user           User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])                         // list sessions for a user
+  @@index([refreshTokenId])                 // join to RefreshToken on revoke
+  @@map("sessions")
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// PASSWORD RESET TOKEN
+// Maps to: POST /auth/forgot-password, POST /auth/reset-password
+//
+// Design notes:
+//   • One active (unused, unexpired) token per user at a time.
+//   • Service layer invalidates all existing tokens before issuing a new one.
+//   • Raw token is hashed (SHA-256) — same as RefreshToken.
+//   • Rows are purged after 24 h by a cleanup job.
+// ─────────────────────────────────────────────────────────────────────────────
+model PasswordResetToken {
+  id        String   @id @default(uuid()) @db.Uuid
+  userId    String   @db.Uuid
+
+  // SHA-256(rawToken)
+  tokenHash String   @unique @db.VarChar(64)
+
+  isUsed    Boolean  @default(false)
+  expiresAt DateTime                    // now() + 1 hour
+  createdAt DateTime @default(now())
+
+  // Relations
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([tokenHash])
+  @@index([expiresAt, isUsed])          // cleanup job filter
+  @@map("password_reset_tokens")
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// EMAIL VERIFY TOKEN
+// Maps to: POST /auth/register (auto-issues token + sends email)
+//          GET  /auth/verify-email?token=...
+//
+// Design notes:
+//   • Issued on registration; also re-issued if the user requests re-send.
+//   • Setting isUsed = true + User.emailVerified = true happens atomically
+//     inside a Prisma $transaction block at the service layer.
+// ─────────────────────────────────────────────────────────────────────────────
+model EmailVerifyToken {
+  id        String   @id @default(uuid()) @db.Uuid
+  userId    String   @db.Uuid
+
+  // SHA-256(rawToken)
+  tokenHash String   @unique @db.VarChar(64)
+
+  isUsed    Boolean  @default(false)
+  expiresAt DateTime                    // now() + 24 hours
+  createdAt DateTime @default(now())
+
+  // Relations
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([tokenHash])
+  @@index([expiresAt, isUsed])          // cleanup job filter
+  @@map("email_verify_tokens")
+}
