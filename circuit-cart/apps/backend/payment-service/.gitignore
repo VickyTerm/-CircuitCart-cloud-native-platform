@@ -1,2 +1,5 @@
-prisma.config.*
-env
+node_modules/
+dist/
+generated/
+.env
+*.tsbuildinfo
