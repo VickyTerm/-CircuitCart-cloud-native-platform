@@ -1,0 +1,197 @@
+datasource db {
+  provider = "postgresql"
+}
+
+generator client {
+  provider        = "prisma-client-js"
+  output          = "../generated/prisma"
+  previewFeatures = ["queryCompiler", "driverAdapters"]
+}
+
+enum OrderStatus {
+  PENDING_PAYMENT
+  PAYMENT_FAILED
+  CONFIRMED
+  PROCESSING
+  SHIPPED
+  OUT_FOR_DELIVERY
+  DELIVERED
+  CANCELLED
+  RETURN_REQUESTED
+  RETURNED
+  REFUNDED
+}
+
+enum ReturnResolution {
+  REFUND
+  REPLACEMENT
+  STORE_CREDIT
+}
+
+enum CouponType {
+  PERCENTAGE
+  FIXED_AMOUNT
+  FREE_SHIPPING
+}
+
+model Coupon {
+  id              String     @id @default(uuid()) @db.Uuid
+  code            String     @unique @db.VarChar(50)
+  description     String?    @db.VarChar(255)
+  type            CouponType
+  value           Decimal    @db.Decimal(10, 2)
+  minOrderAmount  Decimal    @default(0) @db.Decimal(10, 2) @map("min_order_amount")
+  maxDiscount     Decimal?   @db.Decimal(10, 2) @map("max_discount")
+  usageLimit      Int?       @map("usage_limit")
+  usageCount      Int        @default(0) @map("usage_count")
+  isActive        Boolean    @default(true) @map("is_active")
+  expiresAt       DateTime?  @map("expires_at")
+  createdAt       DateTime   @default(now()) @map("created_at")
+  updatedAt       DateTime   @updatedAt @map("updated_at")
+
+  carts           Cart[]
+
+  @@index([code])
+  @@index([isActive, expiresAt])
+  @@map("coupons")
+}
+
+model Cart {
+  id             String     @id @default(uuid()) @db.Uuid
+  userId         String     @unique @db.Uuid @map("user_id")
+  couponId       String?    @db.Uuid @map("coupon_id")
+  couponCode     String?    @db.VarChar(50) @map("coupon_code")
+  discountAmount Decimal    @default(0) @db.Decimal(10, 2) @map("discount_amount")
+  createdAt      DateTime   @default(now()) @map("created_at")
+  updatedAt      DateTime   @updatedAt @map("updated_at")
+
+  coupon         Coupon?    @relation(fields: [couponId], references: [id], onDelete: SetNull)
+  items          CartItem[]
+
+  @@index([userId])
+  @@map("carts")
+}
+
+model CartItem {
+  id                  String   @id @default(uuid()) @db.Uuid
+  cartId              String   @db.Uuid @map("cart_id")
+  productId           String   @db.Uuid @map("product_id")
+  productName         String   @db.VarChar(255) @map("product_name")
+  productSku          String   @db.VarChar(100) @map("product_sku")
+  quantity            Int
+  unitPrice           Decimal  @db.Decimal(10, 2) @map("unit_price")
+  discountedUnitPrice Decimal? @db.Decimal(10, 2) @map("discounted_unit_price")
+  imageUrl            String?  @db.VarChar(2048) @map("image_url")
+  createdAt           DateTime @default(now()) @map("created_at")
+  updatedAt           DateTime @updatedAt @map("updated_at")
+
+  cart                Cart     @relation(fields: [cartId], references: [id], onDelete: Cascade)
+
+  @@unique([cartId, productId])
+  @@index([cartId])
+  @@index([productId])
+  @@map("cart_items")
+}
+
+model Order {
+  id              String      @id @default(uuid()) @db.Uuid
+  userId          String      @db.Uuid @map("user_id")
+  idempotencyKey  String      @unique @db.VarChar(64) @map("idempotency_key")
+  status          OrderStatus @default(PENDING_PAYMENT)
+  subtotal        Decimal     @db.Decimal(10, 2)
+  discountAmount  Decimal     @default(0) @db.Decimal(10, 2) @map("discount_amount")
+  shippingAmount  Decimal     @default(0) @db.Decimal(10, 2) @map("shipping_amount")
+  taxAmount       Decimal     @default(0) @db.Decimal(10, 2) @map("tax_amount")
+  totalAmount     Decimal     @db.Decimal(10, 2) @map("total_amount")
+  couponCode      String?     @db.VarChar(50) @map("coupon_code")
+  shippingAddress Json        @map("shipping_address")
+  notes           String?     @db.Text
+  createdAt       DateTime    @default(now()) @map("created_at")
+  updatedAt       DateTime    @updatedAt @map("updated_at")
+
+  items         OrderItem[]
+  statusHistory OrderStatusHistory[]
+  shipment      Shipment?
+  returns       Return[]
+
+  @@index([userId])
+  @@index([status])
+  @@index([userId, status])
+  @@index([idempotencyKey])
+  @@index([createdAt])
+  @@map("orders")
+}
+
+model OrderItem {
+  id                  String   @id @default(uuid()) @db.Uuid
+  orderId             String   @db.Uuid @map("order_id")
+  productId           String   @db.Uuid @map("product_id")
+  productName         String   @db.VarChar(255) @map("product_name")
+  productSku          String   @db.VarChar(100) @map("product_sku")
+  quantity            Int
+  unitPrice           Decimal  @db.Decimal(10, 2) @map("unit_price")
+  discountedUnitPrice Decimal? @db.Decimal(10, 2) @map("discounted_unit_price")
+  imageUrl            String?  @db.VarChar(2048) @map("image_url")
+  createdAt           DateTime @default(now()) @map("created_at")
+
+  order               Order    @relation(fields: [orderId], references: [id], onDelete: Cascade)
+
+  @@index([orderId])
+  @@index([productId])
+  @@map("order_items")
+}
+
+model OrderStatusHistory {
+  id        String      @id @default(uuid()) @db.Uuid
+  orderId   String      @db.Uuid @map("order_id")
+  status    OrderStatus
+  actorId   String?     @db.Uuid @map("actor_id")
+  actorType String      @db.VarChar(20) @map("actor_type")
+  note      String?     @db.Text
+  changedAt DateTime    @default(now()) @map("changed_at")
+
+  order     Order       @relation(fields: [orderId], references: [id], onDelete: Cascade)
+
+  @@index([orderId])
+  @@index([orderId, changedAt])
+  @@map("order_status_history")
+}
+
+model Shipment {
+  id             String    @id @default(uuid()) @db.Uuid
+  orderId        String    @unique @db.Uuid @map("order_id")
+  carrier        String    @db.VarChar(100)
+  trackingNumber String    @unique @db.VarChar(255) @map("tracking_number")
+  trackingUrl    String?   @db.VarChar(2048) @map("tracking_url")
+  events         Json[]
+  estimatedAt    DateTime? @map("estimated_at")
+  shippedAt      DateTime? @map("shipped_at")
+  deliveredAt    DateTime? @map("delivered_at")
+  createdAt      DateTime  @default(now()) @map("created_at")
+  updatedAt      DateTime  @updatedAt @map("updated_at")
+
+  order          Order     @relation(fields: [orderId], references: [id], onDelete: Cascade)
+
+  @@index([orderId])
+  @@index([trackingNumber])
+  @@map("shipments")
+}
+
+model Return {
+  id                  String           @id @default(uuid()) @db.Uuid
+  orderId             String           @db.Uuid @map("order_id")
+  userId              String           @db.Uuid @map("user_id")
+  items               Json
+  preferredResolution ReturnResolution @map("preferred_resolution")
+  status              String           @default("REQUESTED") @db.VarChar(50)
+  adminNote           String?          @db.Text @map("admin_note")
+  createdAt           DateTime         @default(now()) @map("created_at")
+  updatedAt           DateTime         @updatedAt @map("updated_at")
+
+  order               Order            @relation(fields: [orderId], references: [id], onDelete: Cascade)
+
+  @@index([orderId])
+  @@index([userId])
+  @@index([status])
+  @@map("returns")
+}
