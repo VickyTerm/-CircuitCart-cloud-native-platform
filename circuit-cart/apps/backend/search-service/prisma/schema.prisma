@@ -1,0 +1,74 @@
+datasource db {
+  provider = "mongodb"
+  url      = env("DATABASE_URL")
+}
+
+generator client {
+  provider = "prisma-client-js"
+  output   = "../generated/prisma"
+}
+
+enum IndexStatus {
+  ACTIVE
+  INACTIVE
+  DELETED
+}
+
+model SearchIndex {
+  id             String      @id @default(auto()) @map("_id") @db.ObjectId
+
+  // Product identity
+  product_id     String      @unique @db.ObjectId
+  name           String
+  slug           String      @unique
+  description    String?
+  brand          String?
+  category       String
+  sub_category   String?
+  tags           String[]
+
+  // Pricing & availability
+  price          Float
+  original_price Float?
+  currency       String      @default("INR")
+  in_stock       Boolean     @default(true)
+  stock_count    Int         @default(0)
+
+  // Review metadata (denormalized from review-service)
+  rating_avg     Float       @default(0)
+  review_count   Int         @default(0)
+
+  // Faceted search attributes (flexible: color, size, material, etc.)
+  attributes     Json?
+
+  // Media
+  thumbnail_url  String?
+  image_urls     String[]
+
+  // Index control
+  status         IndexStatus @default(ACTIVE)
+  indexed_at     DateTime    @default(now())
+  updated_at     DateTime    @updatedAt
+
+  @@index([category])
+  @@index([brand])
+  @@index([status])
+  @@index([in_stock])
+  @@index([price])
+  @@index([rating_avg])
+}
+
+model SearchQuery {
+  id                 String   @id @default(auto()) @map("_id") @db.ObjectId
+  query              String
+  user_id            String?  @db.ObjectId
+  session_id         String?
+  results_count      Int      @default(0)
+  clicked_product_id String?  @db.ObjectId
+  filters_applied    Json?
+  created_at         DateTime @default(now())
+
+  @@index([query])
+  @@index([user_id])
+  @@index([created_at])
+}

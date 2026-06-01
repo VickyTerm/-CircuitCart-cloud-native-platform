@@ -1,0 +1,108 @@
+datasource db {
+  provider = "postgresql"
+}
+
+generator client {
+  provider = "prisma-client-js"
+  output   = "../generated/prisma"
+}
+
+// ─── Enums ───────────────────────────────────────────────────────────────────
+
+enum PaymentStatus {
+  PENDING
+  SUCCESS
+  FAILED
+  REFUNDED
+  PARTIALLY_REFUNDED
+}
+
+enum RefundStatus {
+  PENDING
+  SUCCESS
+  FAILED
+}
+
+// ─── Models ──────────────────────────────────────────────────────────────────
+
+model Payment {
+  id                  String        @id @default(uuid()) @db.Uuid
+  order_id            String        @db.Uuid
+  user_id             String        @db.Uuid
+  provider            String        @db.VarChar(50)
+  provider_payment_id String        @unique @db.VarChar(255)
+  provider_order_id   String        @db.VarChar(255)
+  amount              Decimal       @db.Decimal(10, 2)
+  currency            String        @default("INR") @db.VarChar(10)
+  status              PaymentStatus @default(PENDING)
+  method              String        @db.VarChar(50)
+  failure_reason      String?
+  metadata            Json?
+  created_at          DateTime      @default(now())
+  updated_at          DateTime      @updatedAt
+
+  refunds        Refund[]
+  payment_events PaymentEvent[]
+
+  @@index([order_id])
+  @@index([user_id])
+  @@index([status])
+  @@map("payments")
+}
+
+model Refund {
+  id                String       @id @default(uuid()) @db.Uuid
+  payment_id        String       @db.Uuid
+  provider_refund_id String      @unique @db.VarChar(255)
+  amount            Decimal      @db.Decimal(10, 2)
+  reason            String?
+  status            RefundStatus @default(PENDING)
+  created_at        DateTime     @default(now())
+  updated_at        DateTime     @updatedAt
+
+  payment Payment @relation(fields: [payment_id], references: [id])
+
+  @@index([payment_id])
+  @@map("refunds")
+}
+
+model PaymentEvent {
+  id         String   @id @default(uuid()) @db.Uuid
+  payment_id String?  @db.Uuid
+  provider   String   @db.VarChar(50)
+  event_type String   @db.VarChar(100)
+  payload    Json
+  processed  Boolean  @default(false)
+  created_at DateTime @default(now())
+
+  payment Payment? @relation(fields: [payment_id], references: [id])
+
+  @@index([payment_id])
+  @@index([processed])
+  @@map("payment_events")
+}
+
+model PaymentMethod {
+  id             String   @id @default(uuid()) @db.Uuid
+  user_id        String   @db.Uuid
+  provider       String   @db.VarChar(50)
+  provider_token String   @unique @db.VarChar(255)
+  type           String   @db.VarChar(50)
+  last4          String?  @db.VarChar(4)
+  expiry         String?  @db.VarChar(7)
+  is_default     Boolean  @default(false)
+  created_at     DateTime @default(now())
+  updated_at     DateTime @updatedAt
+
+  @@index([user_id])
+  @@map("payment_methods")
+}
+
+model IdempotencyKey {
+  id         String   @id @default(uuid()) @db.Uuid
+  key        String   @unique @db.VarChar(64)
+  response   Json
+  created_at DateTime @default(now())
+
+  @@map("idempotency_keys")
+}
