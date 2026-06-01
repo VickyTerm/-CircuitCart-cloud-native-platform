@@ -1,0 +1,112 @@
+datasource db {
+  provider = "postgresql"
+}
+
+generator client {
+  provider = "prisma-client-js"
+  output   = "../generated/prisma"
+}
+
+enum ApiKeyStatus {
+  ACTIVE
+  REVOKED
+  EXPIRED
+}
+
+enum LogStatus {
+  SUCCESS
+  CLIENT_ERROR
+  SERVER_ERROR
+  TIMEOUT
+}
+
+enum RateLimitScope {
+  IP
+  USER
+  API_KEY
+}
+
+model ApiKey {
+  id           String       @id @default(uuid()) @db.Uuid
+  name         String
+  key_hash     String       @unique @db.VarChar(128)
+  key_prefix   String       @db.VarChar(8)
+  status       ApiKeyStatus @default(ACTIVE)
+  owner_id     String?      @db.Uuid
+  scopes       String[]
+  expires_at   DateTime?
+  last_used_at DateTime?
+  created_at   DateTime     @default(now())
+  updated_at   DateTime     @updatedAt
+
+  rate_overrides RateLimitOverride[]
+  request_logs   RequestLog[]
+
+  @@index([owner_id])
+  @@index([status])
+}
+
+model RequestLog {
+  id               String    @id @default(uuid()) @db.Uuid
+  api_key_id       String?   @db.Uuid
+  user_id          String?   @db.Uuid
+  ip               String    @db.VarChar(45)
+  method           String    @db.VarChar(10)
+  path             String
+  upstream_service String?
+  status_code      Int
+  log_status       LogStatus
+  request_ms       Int
+  request_size     Int?
+  response_size    Int?
+  created_at       DateTime  @default(now())
+
+  api_key ApiKey? @relation(fields: [api_key_id], references: [id], onDelete: SetNull)
+
+  @@index([api_key_id])
+  @@index([user_id])
+  @@index([log_status])
+  @@index([created_at])
+}
+
+model RouteConfig {
+  id           String   @id @default(uuid()) @db.Uuid
+  path_prefix  String   @unique
+  upstream_url String
+  service_name String
+  is_active    Boolean  @default(true)
+  strip_prefix Boolean  @default(false)
+  timeout_ms   Int      @default(5000)
+  created_at   DateTime @default(now())
+  updated_at   DateTime @updatedAt
+
+  @@index([is_active])
+}
+
+model BlockedIp {
+  id         String    @id @default(uuid()) @db.Uuid
+  ip         String    @unique @db.VarChar(45)
+  reason     String?
+  blocked_at DateTime  @default(now())
+  expires_at DateTime?
+  blocked_by String?   @db.Uuid
+
+  @@index([expires_at])
+}
+
+model RateLimitOverride {
+  id         String         @id @default(uuid()) @db.Uuid
+  scope      RateLimitScope
+  api_key_id String?        @db.Uuid
+  user_id    String?        @db.Uuid
+  ip         String?        @db.VarChar(45)
+  limit      Int
+  window_sec Int
+  created_at DateTime       @default(now())
+  updated_at DateTime       @updatedAt
+
+  api_key ApiKey? @relation(fields: [api_key_id], references: [id], onDelete: Cascade)
+
+  @@index([api_key_id])
+  @@index([user_id])
+}

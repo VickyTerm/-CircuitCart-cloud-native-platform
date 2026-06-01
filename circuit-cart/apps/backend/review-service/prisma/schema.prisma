@@ -1,0 +1,93 @@
+datasource db {
+  provider = "mongodb"
+  url      = env("DATABASE_URL")
+}
+
+generator client {
+  provider = "prisma-client-js"
+  output   = "../generated/prisma"
+}
+
+enum ReviewStatus {
+  PENDING
+  APPROVED
+  REJECTED
+  FLAGGED
+}
+
+enum VoteType {
+  HELPFUL
+  NOT_HELPFUL
+}
+
+enum MediaType {
+  IMAGE
+  VIDEO
+}
+
+model Review {
+  id                String      @id @default(auto()) @map("_id") @db.ObjectId
+  user_id           String      @db.ObjectId
+  product_id        String      @db.ObjectId
+  order_id          String?     @db.ObjectId
+  rating            Int
+  title             String
+  body              String
+  verified_purchase Boolean     @default(false)
+  status            ReviewStatus @default(PENDING)
+  helpful_count     Int         @default(0)
+  not_helpful_count Int         @default(0)
+  reply_count       Int         @default(0)
+  created_at        DateTime    @default(now())
+  updated_at        DateTime    @updatedAt
+
+  media   ReviewMedia[]
+  votes   ReviewVote[]
+  replies ReviewReply[]
+
+  @@index([product_id])
+  @@index([user_id])
+  @@index([status])
+  @@index([rating])
+}
+
+model ReviewMedia {
+  id         String    @id @default(auto()) @map("_id") @db.ObjectId
+  review_id  String    @db.ObjectId
+  type       MediaType
+  url        String
+  alt_text   String?
+  sort_order Int       @default(0)
+  created_at DateTime  @default(now())
+
+  review Review @relation(fields: [review_id], references: [id], onDelete: Cascade)
+
+  @@index([review_id])
+}
+
+model ReviewVote {
+  id         String   @id @default(auto()) @map("_id") @db.ObjectId
+  review_id  String   @db.ObjectId
+  user_id    String   @db.ObjectId
+  vote       VoteType
+  created_at DateTime @default(now())
+
+  review Review @relation(fields: [review_id], references: [id], onDelete: Cascade)
+
+  @@unique([review_id, user_id])
+  @@index([review_id])
+}
+
+model ReviewReply {
+  id         String   @id @default(auto()) @map("_id") @db.ObjectId
+  review_id  String   @db.ObjectId
+  author_id  String   @db.ObjectId
+  author_role String  // "SELLER" | "ADMIN"
+  body       String
+  created_at DateTime @default(now())
+  updated_at DateTime @updatedAt
+
+  review Review @relation(fields: [review_id], references: [id], onDelete: Cascade)
+
+  @@index([review_id])
+}
