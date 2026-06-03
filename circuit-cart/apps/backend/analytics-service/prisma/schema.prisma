@@ -1,0 +1,157 @@
+datasource db {
+  provider = "mongodb"
+  url      = env("DATABASE_URL")
+}
+
+generator client {
+  provider = "prisma-client-js"
+  output   = "../generated/prisma"
+}
+
+// ─────────────────────────────────────────────
+// Enums
+// ─────────────────────────────────────────────
+
+enum EventType {
+  // Product
+  PRODUCT_VIEWED
+  PRODUCT_SEARCHED
+  PRODUCT_CLICKED
+
+  // Cart & Orders
+  CART_ADDED
+  CART_REMOVED
+  CHECKOUT_STARTED
+  ORDER_PLACED
+  ORDER_CANCELLED
+
+  // Payments
+  PAYMENT_INITIATED
+  PAYMENT_SUCCESS
+  PAYMENT_FAILED
+  REFUND_REQUESTED
+
+  // User
+  USER_REGISTERED
+  USER_LOGGED_IN
+  USER_LOGGED_OUT
+
+  // Engagement
+  REVIEW_SUBMITTED
+  NOTIFICATION_OPENED
+  SEARCH_PERFORMED
+}
+
+enum EntityType {
+  PRODUCT
+  ORDER
+  PAYMENT
+  USER
+  REVIEW
+  NOTIFICATION
+  SEARCH
+}
+
+// ─────────────────────────────────────────────
+// Collections
+// ─────────────────────────────────────────────
+
+// Raw event stream — source of truth for everything
+model AnalyticsEvent {
+  id          String     @id @default(auto()) @map("_id") @db.ObjectId
+  user_id     String?    @db.ObjectId       // null for anonymous users
+  session_id  String                        // browser/app session identifier
+  event_type  EventType
+  entity_type EntityType
+  entity_id   String     @db.ObjectId       // product_id / order_id / user_id etc.
+  properties  Json?                         // flexible payload per event type
+  ip          String?
+  user_agent  String?
+  created_at  DateTime   @default(now())
+
+  @@index([user_id])
+  @@index([session_id])
+  @@index([event_type])
+  @@index([entity_type])
+  @@index([entity_id])
+  @@index([created_at])
+}
+
+// Pre-computed daily metrics per product — updated by a background job
+model ProductAggregate {
+  id              String   @id @default(auto()) @map("_id") @db.ObjectId
+  product_id      String   @db.ObjectId
+  date            DateTime                   // daily snapshot — store as start of day UTC
+
+  // Traffic
+  views           Int      @default(0)
+  unique_views    Int      @default(0)
+
+  // Engagement
+  cart_adds       Int      @default(0)
+  wishlist_adds   Int      @default(0)
+
+  // Conversions
+  purchases       Int      @default(0)
+  revenue         Float    @default(0)
+
+  // Refunds
+  refunds         Int      @default(0)
+  refund_amount   Float    @default(0)
+
+  // Review metadata (synced from review-service)
+  avg_rating      Float    @default(0)
+  review_count    Int      @default(0)
+
+  @@unique([product_id, date])
+  @@index([product_id])
+  @@index([date])
+}
+
+// Session-based purchase funnel — one row per user per session
+model UserFunnel {
+  id                    String    @id @default(auto()) @map("_id") @db.ObjectId
+  user_id               String    @db.ObjectId
+  session_id            String    @unique
+  product_id            String?   @db.ObjectId    // null if funnel is order-level
+
+  // Funnel timestamps — null means step not reached
+  viewed_at             DateTime?
+  cart_added_at         DateTime?
+  checkout_started_at   DateTime?
+  purchased_at          DateTime?
+  abandoned_at          DateTime?                 // set when session expires without purchase
+
+  @@index([user_id])
+  @@index([product_id])
+  @@index([purchased_at])
+  @@index([abandoned_at])
+}
+
+// Platform-wide daily dashboard snapshot
+model DailySnapshot {
+  id                    String   @id @default(auto()) @map("_id") @db.ObjectId
+  date                  DateTime @unique            // start of day UTC
+
+  // Orders & Revenue
+  total_orders          Int      @default(0)
+  total_revenue         Float    @default(0)
+  cancelled_orders      Int      @default(0)
+
+  // Users
+  new_users             Int      @default(0)
+  returning_users       Int      @default(0)
+
+  // Search
+  total_searches        Int      @default(0)
+
+  // Payments
+  successful_payments   Int      @default(0)
+  failed_payments       Int      @default(0)
+  total_refunds         Int      @default(0)
+  refund_amount         Float    @default(0)
+
+  // Engagement
+  notifications_sent    Int      @default(0)
+  reviews_submitted     Int      @default(0)
+}

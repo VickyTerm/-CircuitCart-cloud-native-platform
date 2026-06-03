@@ -1,0 +1,32 @@
+{
+  "name": "@circuit-cart/analytics-service",
+  "version": "1.0.0",
+  "description": "Circuit Cart — analytics-service",
+  "private": true,
+  "type": "module",
+  "main": "dist/index.js",
+  "scripts": {
+    "build": "tsc --project tsconfig.json",
+    "start": "node dist/index.js",
+    "dev": "tsx watch src/index.ts",
+    "prisma:generate": "prisma generate",
+    "prisma:push": "prisma db push",
+    "prisma:studio": "prisma studio",
+    "test": "vitest run",
+    "test:watch": "vitest"
+  },
+  "dependencies": {
+    "@prisma/client": "^6.19.3",
+    "dotenv": "^17.4.2"
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "prisma": "^6.19.3",
+    "tsx": "^4.19.3",
+    "typescript": "^5.8.3",
+    "vitest": "^4.1.8"
+  },
+  "engines": {
+    "node": ">=20.0.0"
+  }
+}
